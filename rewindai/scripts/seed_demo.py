@@ -2,11 +2,25 @@
 
 import asyncio
 import httpx
+from neo4j import GraphDatabase
 
 API = "http://localhost:8000/api/v1"
 
 
+def clean_database():
+    """Clear all data from Neo4j for a clean seed."""
+    print("Cleaning database...")
+    driver = GraphDatabase.driver("bolt://localhost:7687", auth=("neo4j", "rewindai"))
+    driver.execute_query("MATCH (n) DETACH DELETE n")
+    # Re-create main branch
+    driver.execute_query("MERGE (b:Branch {name: 'main'}) ON CREATE SET b.createdAt = datetime(), b.createdBy = 'system'")
+    driver.close()
+    print("Database cleaned.\n")
+
+
 async def seed():
+    clean_database()
+
     async with httpx.AsyncClient(timeout=30.0) as client:
         print("Seeding RewindAI demo data...\n")
 
