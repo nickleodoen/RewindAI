@@ -89,6 +89,22 @@ export interface TimelineEntry {
   parent_id?: string | null
 }
 
+export interface CommitSnapshot {
+  commit: Commit
+  branch_name: string
+  parent_ids: string[]
+  is_merge: boolean
+  merged_from_branch?: string | null
+  merge_base_commit_id?: string | null
+  active_memories: Memory[]
+  active_memory_count: number
+  memory_breakdown: Record<string, number>
+  grouped_memories: Record<string, Memory[]>
+  context_summary: string
+  reconstructed_context?: string | null
+  compaction_snapshot_count: number
+}
+
 export interface MergeConflict {
   memory_a: Memory
   memory_b: Memory

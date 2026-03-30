@@ -11,8 +11,35 @@ type Tab = 'chat' | 'graph' | 'diff'
 
 const DEMO_USER = 'demo'
 
+const TAB_ICONS: Record<Tab, string> = {
+  chat: 'M8 12h.01M12 12h.01M16 12h.01M21 12c0 4.418-4.03 8-9 8a9.863 9.863 0 01-4.255-.949L3 20l1.395-3.72C3.512 15.042 3 13.574 3 12c0-4.418 4.03-8 9-8s9 3.582 9 8z',
+  graph: 'M13 10V3L4 14h7v7l9-11h-7z',
+  diff: 'M9 5H7a2 2 0 00-2 2v12a2 2 0 002 2h10a2 2 0 002-2V7a2 2 0 00-2-2h-2M9 5a2 2 0 002 2h2a2 2 0 002-2M9 5a2 2 0 012-2h2a2 2 0 012 2',
+}
+
 function shortId(value?: string | null) {
-  return value ? value.slice(0, 8) : 'none'
+  return value ? value.slice(0, 8) : '—'
+}
+
+function StatusChip({ label, value, variant = 'default' }: { label: string; value: string; variant?: 'default' | 'mono' | 'success' | 'warning' | 'merge' }) {
+  const valueClass = variant === 'mono'
+    ? 'font-mono text-text-primary'
+    : variant === 'success'
+      ? 'font-mono text-emerald-400'
+      : variant === 'warning'
+        ? 'text-amber-400'
+        : variant === 'merge'
+          ? 'text-emerald-300'
+          : 'text-text-secondary'
+
+  return (
+    <div className="flex items-center gap-1.5">
+      <span className="text-text-muted">{label}</span>
+      <span className={`rounded px-1.5 py-0.5 text-[11px] leading-none ${valueClass}`} style={{ background: 'rgba(255,255,255,0.04)' }}>
+        {value}
+      </span>
+    </div>
+  )
 }
 
 export default function App() {
@@ -149,119 +176,98 @@ export default function App() {
     }
   }
 
+  const neo4jOk = healthStatus?.neo4j === 'connected'
+
   return (
-    <div className="min-h-screen flex flex-col" style={{ background: '#0a0a0f', color: '#e2e8f0' }}>
+    <div className="flex h-screen flex-col" style={{ background: '#09090b', color: '#f0f0f3' }}>
+      {/* Checkout overlay */}
       {checkoutOverlay.show && (
         <div
+          className="fixed inset-0 z-50 flex flex-col items-center justify-center gap-4"
           style={{
-            position: 'fixed',
-            inset: 0,
-            zIndex: 50,
-            background: 'rgba(139, 92, 246, 0.85)',
-            display: 'flex',
-            alignItems: 'center',
-            justifyContent: 'center',
-            flexDirection: 'column',
-            gap: '12px',
-            backdropFilter: 'blur(8px)',
+            background: 'rgba(9,9,11,0.92)',
+            backdropFilter: 'blur(20px)',
           }}
         >
-          <div style={{ fontSize: '48px' }}>⏪</div>
-          <div style={{ fontSize: '24px', fontWeight: 'bold', color: 'white' }}>
-            Rewinding memory state...
+          <div className="flex h-16 w-16 items-center justify-center rounded-2xl" style={{ background: 'rgba(139,92,246,0.15)' }}>
+            <svg width="28" height="28" viewBox="0 0 24 24" fill="none" stroke="#8b5cf6" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
+              <polyline points="1 4 1 10 7 10" />
+              <path d="M3.51 15a9 9 0 1 0 2.13-9.36L1 10" />
+            </svg>
           </div>
-          <div style={{ fontSize: '16px', color: 'rgba(255,255,255,0.84)' }}>
-            {checkoutOverlay.message}
+          <div className="text-lg font-semibold text-text-primary">Rewinding memory state</div>
+          <div className="max-w-sm text-center text-sm text-text-secondary">{checkoutOverlay.message}</div>
+          <div className="mt-2 h-1 w-32 overflow-hidden rounded-full" style={{ background: 'rgba(139,92,246,0.15)' }}>
+            <div className="h-full animate-pulse rounded-full bg-accent" style={{ width: '60%' }} />
           </div>
         </div>
       )}
 
+      {/* Header */}
       <header
-        style={{
-          background: '#12121a',
-          borderBottom: '1px solid #1e1e2e',
-          padding: '12px 24px',
-          display: 'flex',
-          alignItems: 'center',
-          justifyContent: 'space-between',
-          gap: '16px',
-        }}
+        className="flex items-center justify-between gap-4 px-5 py-2.5"
+        style={{ background: '#0c0c0f', borderBottom: '1px solid rgba(255,255,255,0.06)' }}
       >
-        <div style={{ display: 'flex', alignItems: 'center', gap: '12px' }}>
-          <div
-            style={{
-              width: 32,
-              height: 32,
-              borderRadius: 8,
-              background: '#8b5cf6',
-              display: 'flex',
-              alignItems: 'center',
-              justifyContent: 'center',
-              fontWeight: 'bold',
-              color: 'white',
-            }}
-          >
+        <div className="flex items-center gap-3">
+          <div className="flex h-7 w-7 items-center justify-center rounded-lg bg-accent text-xs font-bold text-white">
             R
           </div>
-          <div style={{ display: 'flex', flexDirection: 'column', gap: 2 }}>
-            <span style={{ fontSize: '18px', fontWeight: 600, color: 'white' }}>RewindAI</span>
-            <span style={{ fontSize: '11px', color: '#64748b' }}>git for AI memory</span>
+          <div className="flex items-baseline gap-2">
+            <span className="text-sm font-semibold text-text-primary tracking-tight">RewindAI</span>
+            <span className="text-[11px] text-text-muted">git for AI memory</span>
           </div>
-          <span
-            style={{
-              fontSize: '11px',
-              padding: '2px 8px',
-              borderRadius: 999,
-              background: '#1e1e2e',
-              color: '#8b5cf6',
-            }}
-          >
-            Hackathon demo
-          </span>
         </div>
 
-        <div style={{ display: 'flex', flexDirection: 'column', gap: 6, alignItems: 'flex-end' }}>
-          <div style={{ display: 'flex', alignItems: 'center', gap: '8px', fontSize: '12px', flexWrap: 'wrap', justifyContent: 'flex-end' }}>
-            <span style={{ color: '#64748b' }}>Branch</span>
-            <span style={{ fontFamily: 'monospace', padding: '2px 8px', borderRadius: 4, background: '#1e1e2e', color: '#10b981' }}>
-              {activeBranch}
+        {/* Workspace status bar */}
+        <div className="flex items-center gap-4 text-[11px]">
+          <StatusChip label="Branch" value={activeBranch} variant="success" />
+          <StatusChip
+            label="Mode"
+            value={workspaceMode}
+            variant={workspaceMode === 'detached' ? 'warning' : 'default'}
+          />
+          <StatusChip label="HEAD" value={shortId(workspaceStatus?.head_commit_id)} variant="mono" />
+          {workspaceStatus?.head_is_merge && (
+            <span
+              className="rounded px-1.5 py-0.5 text-[10px] font-medium text-emerald-300"
+              style={{ background: 'rgba(16,185,129,0.12)' }}
+            >
+              merge
             </span>
-            <span style={{ color: '#64748b' }}>Mode</span>
-            <span style={{ padding: '2px 8px', borderRadius: 999, background: workspaceMode === 'detached' ? '#7c2d12' : '#1e1e2e', color: workspaceMode === 'detached' ? '#fdba74' : '#cbd5e1' }}>
-              {workspaceMode}
-            </span>
-            <span style={{ color: '#64748b' }}>HEAD</span>
-            <span style={{ fontFamily: 'monospace', padding: '2px 8px', borderRadius: 4, background: '#1e1e2e', color: '#e2e8f0' }}>
-              {shortId(workspaceStatus?.head_commit_id)}
-            </span>
-            {workspaceStatus?.head_is_merge && (
-              <span style={{ padding: '2px 8px', borderRadius: 999, background: '#052e16', color: '#86efac' }}>
-                merge HEAD
-              </span>
-            )}
-            <span style={{ color: '#64748b' }}>Session</span>
-            <span style={{ fontFamily: 'monospace', padding: '2px 8px', borderRadius: 4, background: '#1e1e2e', color: '#cbd5e1' }}>
-              {shortId(activeSession)}
-            </span>
-          </div>
-          <div style={{ fontSize: '12px', color: '#94a3b8', maxWidth: 560, textAlign: 'right' }}>
-            {appMessage || workspaceStatus?.summary || 'Loading demo workspace...'}
+          )}
+          <StatusChip label="Session" value={shortId(activeSession)} variant="mono" />
+          <div className="flex items-center gap-1.5">
+            <span
+              className="h-1.5 w-1.5 rounded-full"
+              style={{ background: neo4jOk ? '#10b981' : '#ef4444' }}
+            />
+            <span className="text-text-muted">Neo4j</span>
           </div>
         </div>
       </header>
 
-      <div style={{ display: 'flex', flex: 1, minHeight: 0, overflow: 'hidden' }}>
-        <aside
-          style={{
-            width: 320,
-            borderRight: '1px solid #1e1e2e',
-            display: 'flex',
-            flexDirection: 'column',
-            minHeight: 0,
-            background: '#0f0f17',
-          }}
+      {/* Status message bar */}
+      {appMessage && (
+        <div
+          className="flex items-center px-5 py-1.5 text-[11px] text-text-tertiary"
+          style={{ background: '#0b0b0e', borderBottom: '1px solid rgba(255,255,255,0.04)' }}
         >
-          <div style={{ flex: '0 0 58%', minHeight: 0, overflow: 'hidden' }}>
+          <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" className="mr-2 flex-shrink-0 opacity-50">
+            <circle cx="12" cy="12" r="10" />
+            <path d="M12 16v-4M12 8h.01" />
+          </svg>
+          <span className="truncate">{appMessage}</span>
+        </div>
+      )}
+
+      {/* Main layout */}
+      <div className="flex flex-1 min-h-0 overflow-hidden">
+        {/* Sidebar */}
+        <aside
+          className="flex w-[300px] flex-col min-h-0"
+          style={{ background: '#0c0c0f', borderRight: '1px solid rgba(255,255,255,0.06)' }}
+        >
+          <div className="flex-[6] min-h-0 overflow-hidden">
             <BranchManager
               activeBranch={activeBranch}
               onCheckout={handleCheckout}
@@ -269,7 +275,7 @@ export default function App() {
               refreshKey={branchRefreshKey}
             />
           </div>
-          <div style={{ borderTop: '1px solid #1e1e2e', flex: '1 1 auto', minHeight: 0, overflow: 'hidden' }}>
+          <div className="flex-[4] min-h-0 overflow-hidden" style={{ borderTop: '1px solid rgba(255,255,255,0.06)' }}>
             <Timeline
               branchName={activeBranch}
               refreshKey={branchRefreshKey}
@@ -278,32 +284,40 @@ export default function App() {
           </div>
         </aside>
 
-        <main style={{ flex: 1, display: 'flex', flexDirection: 'column', minWidth: 0, minHeight: 0 }}>
-          <div style={{ display: 'flex', borderBottom: '1px solid #1e1e2e', background: '#11111a' }}>
-            {(['chat', 'graph', 'diff'] as const).map(tab => (
-              <button
-                key={tab}
-                onClick={() => setActiveTab(tab)}
-                style={{
-                  padding: '10px 20px',
-                  fontSize: '14px',
-                  fontWeight: 500,
-                  color: activeTab === tab ? '#8b5cf6' : '#64748b',
-                  borderBottom: activeTab === tab ? '2px solid #8b5cf6' : '2px solid transparent',
-                  background: 'transparent',
-                  borderTop: 'none',
-                  borderLeft: 'none',
-                  borderRight: 'none',
-                  cursor: 'pointer',
-                  textTransform: 'capitalize',
-                }}
-              >
-                {tab}
-              </button>
-            ))}
+        {/* Main content */}
+        <main className="flex flex-1 flex-col min-w-0 min-h-0">
+          {/* Tab bar */}
+          <div
+            className="flex items-center gap-0.5 px-2 pt-1"
+            style={{ background: '#0b0b0e', borderBottom: '1px solid rgba(255,255,255,0.06)' }}
+          >
+            {(['graph', 'chat', 'diff'] as const).map(tab => {
+              const isActive = activeTab === tab
+              return (
+                <button
+                  key={tab}
+                  onClick={() => setActiveTab(tab)}
+                  className={`flex items-center gap-2 rounded-t-lg px-4 py-2.5 text-[13px] font-medium transition-colors ${
+                    isActive
+                      ? 'text-text-primary'
+                      : 'text-text-muted hover:text-text-secondary'
+                  }`}
+                  style={{
+                    background: isActive ? '#09090b' : 'transparent',
+                    borderBottom: isActive ? '2px solid #8b5cf6' : '2px solid transparent',
+                  }}
+                >
+                  <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" className="opacity-60">
+                    <path d={TAB_ICONS[tab]} />
+                  </svg>
+                  <span className="capitalize">{tab}</span>
+                </button>
+              )
+            })}
           </div>
 
-          <div style={{ flex: 1, minHeight: 0, overflow: 'hidden', position: 'relative' }}>
+          {/* Content area */}
+          <div className="flex-1 min-h-0 overflow-hidden">
             {activeTab === 'chat' && (
               <ChatPanel
                 sessionId={activeSession}
@@ -331,27 +345,6 @@ export default function App() {
           </div>
         </main>
       </div>
-
-      <footer
-        style={{
-          borderTop: '1px solid #1e1e2e',
-          padding: '6px 24px',
-          display: 'flex',
-          justifyContent: 'space-between',
-          gap: '12px',
-          fontSize: '11px',
-          color: '#475569',
-          background: '#0d0d14',
-        }}
-      >
-        <span>Neo4j: {healthStatus?.neo4j ?? 'checking'}</span>
-        <span>
-          {selectedNode
-            ? `Selected: ${String(selectedNode.label || selectedNode.id || 'node')}`
-            : workspaceStatus?.summary || 'Ready for demo'}
-        </span>
-        <span>RewindAI v0.1.0 — HackwithBay 2.0</span>
-      </footer>
     </div>
   )
 }

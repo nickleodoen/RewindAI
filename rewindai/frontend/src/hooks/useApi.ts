@@ -1,5 +1,5 @@
 import type {
-  Session, Message, ChatResponse, Branch, Commit, Memory,
+  Session, Message, ChatResponse, Branch, Commit, Memory, CommitSnapshot,
   DiffResult, GraphData, TimelineEntry, HealthResponse, WorkspaceStatus, MergePreview,
 } from '../types'
 
@@ -149,6 +149,10 @@ export function useApi() {
   const getTimeline = (branch_name: string) =>
     apiFetch<TimelineEntry[]>(`/timeline/${branch_name}`)
 
+  // Snapshot
+  const getCommitSnapshot = (commitId: string) =>
+    apiFetch<CommitSnapshot>(`/commits/${commitId}/snapshot`)
+
   return {
     getHealth,
     createSession, listSessions, getMessages,
@@ -161,5 +165,6 @@ export function useApi() {
     getGraphNeighborhood,
     getBranchGraph,
     getTimeline,
+    getCommitSnapshot,
   }
 }

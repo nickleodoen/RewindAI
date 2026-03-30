@@ -17,6 +17,7 @@ from app.models.schema import (
     ChatResponse,
     CheckoutRequest,
     CommitResponse,
+    CommitSnapshotResponse,
     CreateBranchRequest,
     CreateCommitRequest,
     CreateMemoryRequest,
@@ -359,6 +360,125 @@ async def list_commits_endpoint(branch_name: str = "main"):
     driver = await get_driver()
     commits = await list_commits(driver, branch_name)
     return [CommitResponse(**commit) for commit in commits]
+
+
+@router.get("/commits/{commit_id}/snapshot", response_model=CommitSnapshotResponse)
+async def commit_snapshot(commit_id: str):
+    """Get the full AI memory snapshot at a specific commit."""
+    driver = await get_driver()
+
+    # 1. Get commit metadata
+    async with driver.session() as session:
+        result = await session.run(queries.GET_COMMIT, commitId=commit_id)
+        record = await result.single()
+        if not record:
+            raise HTTPException(status_code=404, detail=f"Commit {commit_id} not found")
+
+        commit_node = record["c"]
+        parents = record.get("parents") or []
+        parent_ids = [p["id"] for p in parents if p]
+        branch_node = record.get("b")
+
+    branch_name = commit_node.get("branchName", branch_node["name"] if branch_node else "unknown")
+    is_merge = bool(commit_node.get("isMerge")) or len(parent_ids) > 1
+
+    commit_resp = CommitResponse(
+        id=commit_node["id"],
+        message=commit_node.get("message", ""),
+        summary=commit_node.get("summary"),
+        memory_delta_count=int(commit_node.get("memoryDeltaCount", 0) or 0),
+        branch_name=branch_name,
+        user_id=commit_node.get("userId"),
+        created_at=neo4j_datetime_to_iso(commit_node.get("createdAt")),
+        parent_id=parent_ids[0] if parent_ids else None,
+        parent_ids=parent_ids or list(commit_node.get("parentIds", [])),
+        is_merge=is_merge,
+        merge_strategy=commit_node.get("mergeStrategy"),
+        merged_from_branch=commit_node.get("mergedFromBranch"),
+        merge_base_commit_id=commit_node.get("mergeBaseCommitId"),
+        conflicts_resolved=int(commit_node.get("conflictsResolved", 0) or 0),
+    )
+
+    # 2. Get active memories at this commit (reuses existing temporal + supersession query)
+    memories: list[MemoryResponse] = []
+    async with driver.session() as session:
+        result = await session.run(queries.MEMORIES_AT_COMMIT, commitId=commit_id)
+        records = await result.data()
+        for rec in records:
+            m = rec["m"]
+            memories.append(MemoryResponse(
+                id=m["id"],
+                type=m.get("type", "fact"),
+                content=m.get("content", ""),
+                branch_name=m.get("branchName", branch_name),
+                tags=m.get("tags", []),
+                user_id=m.get("userId"),
+                created_at=neo4j_datetime_to_iso(m.get("createdAt")),
+            ))
+
+    # 3. Group memories by type
+    grouped: dict[str, list[MemoryResponse]] = {}
+    breakdown: dict[str, int] = {}
+    for mem in memories:
+        grouped.setdefault(mem.type, []).append(mem)
+        breakdown[mem.type] = breakdown.get(mem.type, 0) + 1
+
+    # 4. Build context summary
+    type_labels = {
+        "decision": "Decisions",
+        "fact": "Facts",
+        "context": "Context",
+        "action_item": "Action Items",
+        "question": "Open Questions",
+    }
+    summary_parts = []
+    for mem_type, label in type_labels.items():
+        count = breakdown.get(mem_type, 0)
+        if count:
+            summary_parts.append(f"{count} {label.lower()}")
+    context_summary = (
+        f"AI knew {len(memories)} memories at this point: {', '.join(summary_parts)}."
+        if memories
+        else "No memories stored at this commit."
+    )
+
+    # 5. Build reconstructed context text (same format as context_builder)
+    context_parts = []
+    if memories:
+        context_parts.append("## Team Knowledge at This Point\n")
+        for mem_type, label in type_labels.items():
+            items = grouped.get(mem_type, [])
+            if items:
+                context_parts.append(f"### {label}")
+                for item in items:
+                    tags = ", ".join(item.tags)
+                    tag_str = f" [{tags}]" if tags else ""
+                    context_parts.append(f"- {item.content}{tag_str}")
+                context_parts.append("")
+    reconstructed_context = "\n".join(context_parts) if context_parts else None
+
+    # 6. Count compaction snapshots
+    snapshot_count = 0
+    async with driver.session() as session:
+        result = await session.run(queries.GET_COMPACTION_CHAIN, commitId=commit_id)
+        records = await result.data()
+        snapshot_count = len(records)
+
+    return CommitSnapshotResponse(
+        commit=commit_resp,
+        branch_name=branch_name,
+        parent_ids=commit_resp.parent_ids,
+        is_merge=is_merge,
+        merged_from_branch=commit_node.get("mergedFromBranch"),
+        merge_base_commit_id=commit_node.get("mergeBaseCommitId"),
+        active_memories=memories,
+        active_memory_count=len(memories),
+        memory_breakdown=breakdown,
+        grouped_memories=grouped,
+        context_summary=context_summary,
+        reconstructed_context=reconstructed_context,
+        compaction_snapshot_count=snapshot_count,
+    )
 
 
 # ── Memories ──────────────────────────────────────────────────────────────────

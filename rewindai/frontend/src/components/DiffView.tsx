@@ -12,21 +12,28 @@ function MemoryCard({ memory }: { memory: Memory }) {
   const badgeColor = MEMORY_TYPE_COLORS[memory.type as keyof typeof MEMORY_TYPE_COLORS] ?? '#64748b'
 
   return (
-    <div className="rounded-2xl border border-border bg-surface/75 p-4 shadow-sm">
-      <div className="mb-3 flex flex-wrap items-center gap-2">
+    <div
+      className="rounded-lg p-3.5"
+      style={{ background: 'rgba(255,255,255,0.02)', border: '1px solid rgba(255,255,255,0.06)' }}
+    >
+      <div className="mb-2 flex flex-wrap items-center gap-1.5">
         <span
-          className="rounded-full px-2 py-1 text-[11px] font-medium text-white"
-          style={{ background: badgeColor }}
+          className="rounded px-1.5 py-0.5 text-[10px] font-medium text-white"
+          style={{ background: `${badgeColor}cc` }}
         >
           {formatTypeLabel(memory.type)}
         </span>
         {(memory.tags ?? []).map(tag => (
-          <span key={tag} className="rounded-full bg-black/20 px-2 py-1 text-[11px] text-slate-400">
+          <span
+            key={tag}
+            className="rounded px-1.5 py-0.5 text-[10px] text-text-muted"
+            style={{ background: 'rgba(255,255,255,0.04)' }}
+          >
             {tag}
           </span>
         ))}
       </div>
-      <div className="text-sm leading-6 text-slate-100">{memory.content}</div>
+      <div className="text-[13px] leading-relaxed text-text-secondary">{memory.content}</div>
     </div>
   )
 }
@@ -34,7 +41,11 @@ function MemoryCard({ memory }: { memory: Memory }) {
 function MergeSummaryCard({ preview, loading, error }: { preview: MergePreview | null; loading: boolean; error: string | null }) {
   if (loading) {
     return (
-      <div className="rounded-2xl border border-border bg-surface/70 px-4 py-4 text-sm text-slate-400 animate-pulse">
+      <div
+        className="flex items-center gap-2 rounded-lg px-4 py-3 text-xs text-text-muted"
+        style={{ background: 'rgba(255,255,255,0.02)', border: '1px solid rgba(255,255,255,0.06)' }}
+      >
+        <div className="h-3 w-3 animate-spin rounded-full border border-text-muted border-t-accent" />
         Loading merge preview...
       </div>
     )
@@ -42,9 +53,9 @@ function MergeSummaryCard({ preview, loading, error }: { preview: MergePreview |
 
   if (error) {
     return (
-      <div className="rounded-2xl border border-red-500/30 bg-red-500/10 px-4 py-4 text-sm text-red-200">
-        Unable to load merge preview.
-        <div className="mt-1 text-xs text-red-300/80">{error}</div>
+      <div className="rounded-lg px-4 py-3 text-xs text-red-300" style={{ background: 'rgba(239,68,68,0.06)', border: '1px solid rgba(239,68,68,0.12)' }}>
+        Unable to load merge preview
+        <div className="mt-1 text-red-300/60">{error}</div>
       </div>
     )
   }
@@ -53,34 +64,55 @@ function MergeSummaryCard({ preview, loading, error }: { preview: MergePreview |
     return null
   }
 
+  const modeColors: Record<string, { bg: string; border: string; text: string; label: string }> = {
+    'up_to_date': { bg: 'rgba(16,185,129,0.06)', border: 'rgba(16,185,129,0.15)', text: '#6ee7b7', label: 'Up to date' },
+    'fast_forward': { bg: 'rgba(59,130,246,0.06)', border: 'rgba(59,130,246,0.15)', text: '#93c5fd', label: 'Fast-forward' },
+    'merge_required': { bg: 'rgba(245,158,11,0.06)', border: 'rgba(245,158,11,0.15)', text: '#fcd34d', label: 'Merge required' },
+  }
+  const modeStyle = modeColors[preview.mode] ?? modeColors['merge_required']
   const conflict = preview.conflicts[0]
-  const mergeTitle = `If you merge ${preview.source_branch} into ${preview.target_branch}`
 
   return (
-    <div className="rounded-2xl border border-emerald-500/20 bg-emerald-500/5 px-4 py-4">
-      <div className="text-xs uppercase tracking-[0.16em] text-emerald-300">Merge Preview</div>
-      <div className="mt-2 text-sm font-medium text-slate-100">{mergeTitle}</div>
-      <div className="mt-3 flex flex-wrap gap-3 text-xs text-slate-300">
-        <span>Mode: {preview.mode}</span>
-        <span>Base: {preview.merge_base_commit_id?.slice(0, 8) ?? 'none'}</span>
-        <span>Conflicts: {preview.conflicts.length}</span>
-        <span>Auto-merged: {preview.auto_merged.length}</span>
+    <div className="rounded-lg p-4" style={{ background: modeStyle.bg, border: `1px solid ${modeStyle.border}` }}>
+      <div className="flex items-center justify-between">
+        <div className="flex items-center gap-2">
+          <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke={modeStyle.text} strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" className="opacity-70">
+            <circle cx="18" cy="18" r="3" />
+            <circle cx="6" cy="6" r="3" />
+            <path d="M13 6h3a2 2 0 0 1 2 2v7" />
+            <line x1="6" y1="9" x2="6" y2="21" />
+          </svg>
+          <span className="text-xs font-medium" style={{ color: modeStyle.text }}>Merge Preview</span>
+        </div>
+        <span className="rounded px-2 py-0.5 text-[10px] font-medium" style={{ background: `${modeStyle.text}15`, color: modeStyle.text }}>
+          {modeStyle.label}
+        </span>
       </div>
+
+      <div className="mt-2 text-[13px] text-text-secondary">
+        {preview.source_branch} into {preview.target_branch}
+      </div>
+
+      <div className="mt-3 flex flex-wrap gap-4 text-[11px] text-text-muted">
+        <span>Base: <span className="font-mono text-text-tertiary">{preview.merge_base_commit_id?.slice(0, 7) ?? '—'}</span></span>
+        <span>Conflicts: <span className={preview.conflicts.length > 0 ? 'text-amber-400' : 'text-emerald-400'}>{preview.conflicts.length}</span></span>
+        <span>Auto-merged: <span className="text-text-tertiary">{preview.auto_merged.length}</span></span>
+      </div>
+
       {conflict && (
-        <div className="mt-3 rounded-xl border border-amber-500/20 bg-amber-500/8 px-3 py-3 text-sm text-amber-100">
-          <div className="text-xs uppercase tracking-[0.12em] text-amber-300">Primary conflict</div>
-          <div className="mt-1">{conflict.reason}</div>
-          <div className="mt-2 text-xs text-amber-50/85">
-            Target: {conflict.memory_a.content}
-          </div>
-          <div className="mt-1 text-xs text-amber-50/85">
-            Source: {conflict.memory_b.content}
+        <div className="mt-3 rounded-md p-3 text-xs" style={{ background: 'rgba(245,158,11,0.06)', border: '1px solid rgba(245,158,11,0.1)' }}>
+          <div className="mb-1.5 text-[10px] font-medium uppercase tracking-wider text-amber-400">Conflict</div>
+          <div className="text-amber-100/90">{conflict.reason}</div>
+          <div className="mt-2 space-y-1 text-text-muted">
+            <div className="truncate">Target: {conflict.memory_a.content}</div>
+            <div className="truncate">Source: {conflict.memory_b.content}</div>
           </div>
         </div>
       )}
       {!conflict && preview.auto_merged[0] && (
-        <div className="mt-3 rounded-xl border border-emerald-500/20 bg-emerald-500/8 px-3 py-3 text-sm text-emerald-100">
-          Auto-merge highlight: {preview.auto_merged[0].content}
+        <div className="mt-3 rounded-md p-3 text-xs" style={{ background: 'rgba(16,185,129,0.06)', border: '1px solid rgba(16,185,129,0.1)' }}>
+          <div className="mb-1 text-[10px] font-medium uppercase tracking-wider text-emerald-400">Auto-merged</div>
+          <div className="text-emerald-100/80">{preview.auto_merged[0].content}</div>
         </div>
       )}
     </div>
@@ -202,87 +234,117 @@ export default function DiffView({ activeBranch, workspaceMode }: Props) {
   const identical = !loadingDiff && diff && onlyA.length === 0 && onlyB.length === 0
 
   return (
-    <div className="flex h-full flex-col" style={{ background: '#0b0b12' }}>
-      <div className="border-b border-border px-5 py-4">
-        <div className="text-xs uppercase tracking-[0.16em] text-slate-500">Branch Diff</div>
-        <div className="mt-1 text-sm text-slate-400">
-          Workspace mode <span className="font-mono text-purple-300">{workspaceMode}</span> • active branch <span className="font-mono text-emerald-400">{activeBranch}</span>
-        </div>
-        <div className="mt-3 flex flex-wrap items-center gap-3">
-          <select
-            value={branchA}
-            onChange={event => setBranchA(event.target.value)}
-            className="rounded-xl border border-border bg-surface px-3 py-2 text-sm text-slate-100 outline-none"
-          >
-            {(branches ?? []).map(branch => (
-              <option key={branch} value={branch}>
-                {branch}
-              </option>
-            ))}
-          </select>
-          <span className="text-sm text-slate-500">vs</span>
-          <select
-            value={branchB}
-            onChange={event => setBranchB(event.target.value)}
-            className="rounded-xl border border-border bg-surface px-3 py-2 text-sm text-slate-100 outline-none"
-          >
-            {(branches ?? []).filter(branch => branch !== branchA || branches.length === 1).map(branch => (
-              <option key={branch} value={branch}>
-                {branch}
-              </option>
-            ))}
-          </select>
+    <div className="flex h-full flex-col" style={{ background: '#09090b' }}>
+      {/* Diff header */}
+      <div className="px-5 py-3" style={{ borderBottom: '1px solid rgba(255,255,255,0.06)' }}>
+        <div className="flex items-center justify-between">
+          <div className="flex items-center gap-2">
+            <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="#a78bfa" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" className="opacity-70">
+              <path d="M16 3h5v5M4 20L21 3M21 16v5h-5M15 15l6 6M4 4l5 5" />
+            </svg>
+            <span className="text-xs font-medium text-text-secondary">Branch Diff</span>
+          </div>
           <button
             onClick={() => setRefreshTick(prev => prev + 1)}
-            className="rounded-xl border border-slate-600 px-3 py-2 text-sm text-slate-200 transition hover:border-purple-400 hover:text-purple-200"
+            className="flex items-center gap-1.5 rounded-md px-2.5 py-1.5 text-[11px] font-medium text-text-muted transition-colors hover:text-text-secondary"
+            style={{ background: 'rgba(255,255,255,0.04)' }}
           >
+            <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
+              <polyline points="23 4 23 10 17 10" />
+              <path d="M20.49 15a9 9 0 1 1-2.12-9.36L23 10" />
+            </svg>
             Refresh
           </button>
         </div>
+
+        {/* Branch selectors */}
+        <div className="mt-3 flex items-center gap-2">
+          <select
+            value={branchA}
+            onChange={event => setBranchA(event.target.value)}
+            className="rounded-md px-3 py-1.5 text-[13px] text-text-primary outline-none"
+            style={{ background: 'rgba(255,255,255,0.04)', border: '1px solid rgba(255,255,255,0.08)' }}
+          >
+            {(branches ?? []).map(branch => (
+              <option key={branch} value={branch}>{branch}</option>
+            ))}
+          </select>
+          <div className="flex items-center gap-1 text-text-muted">
+            <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
+              <path d="M5 12h14M12 5l7 7-7 7" />
+            </svg>
+          </div>
+          <select
+            value={branchB}
+            onChange={event => setBranchB(event.target.value)}
+            className="rounded-md px-3 py-1.5 text-[13px] text-text-primary outline-none"
+            style={{ background: 'rgba(255,255,255,0.04)', border: '1px solid rgba(255,255,255,0.08)' }}
+          >
+            {(branches ?? []).filter(branch => branch !== branchA || branches.length === 1).map(branch => (
+              <option key={branch} value={branch}>{branch}</option>
+            ))}
+          </select>
+        </div>
       </div>
 
-      <div className="flex-1 overflow-y-auto px-5 py-5">
+      {/* Diff content */}
+      <div className="flex-1 overflow-y-auto px-5 py-4">
+        {/* Merge preview */}
         <div className="mb-4">
           <MergeSummaryCard preview={mergePreview} loading={loadingMergePreview} error={mergeError} />
         </div>
 
         {loadingBranches && (
-          <div className="text-sm text-slate-500 animate-pulse">Loading branches...</div>
+          <div className="flex items-center gap-2 py-6 text-xs text-text-muted">
+            <div className="h-3 w-3 animate-spin rounded-full border border-text-muted border-t-accent" />
+            Loading branches...
+          </div>
         )}
 
         {loadingDiff && (
-          <div className="mb-4 text-sm text-slate-500 animate-pulse">Loading diff...</div>
+          <div className="flex items-center gap-2 py-4 text-xs text-text-muted">
+            <div className="h-3 w-3 animate-spin rounded-full border border-text-muted border-t-accent" />
+            Loading diff...
+          </div>
         )}
 
         {error && (
-          <div className="mb-4 rounded-xl border border-red-500/30 bg-red-500/10 px-4 py-3 text-sm text-red-200">
-            Failed to load diff. Check backend connection.
-            <div className="mt-1 text-xs text-red-300/80">{error}</div>
+          <div className="mb-4 rounded-lg px-4 py-3 text-xs text-red-300" style={{ background: 'rgba(239,68,68,0.06)', border: '1px solid rgba(239,68,68,0.12)' }}>
+            {error}
           </div>
         )}
 
         {identical && (
-          <div className="mb-4 rounded-2xl border border-dashed border-border bg-surface/60 px-5 py-6 text-sm text-slate-400">
+          <div className="rounded-lg px-5 py-6 text-center text-sm text-text-muted" style={{ background: 'rgba(255,255,255,0.02)', border: '1px solid rgba(255,255,255,0.06)' }}>
             Branches are identical — no differences found.
           </div>
         )}
 
         {!loadingBranches && !loadingDiff && !error && !readyToCompare && (
-          <div className="rounded-2xl border border-dashed border-border bg-surface/60 px-5 py-6 text-sm text-slate-400">
-            Select two different branches to compare them side by side.
+          <div className="rounded-lg px-5 py-8 text-center text-sm text-text-muted" style={{ background: 'rgba(255,255,255,0.02)', border: '1px solid rgba(255,255,255,0.06)' }}>
+            Select two different branches to compare.
           </div>
         )}
 
+        {/* Side-by-side diff panels */}
         {!loadingBranches && !loadingDiff && !error && !identical && readyToCompare && (
-          <div className="grid h-full min-h-0 gap-4 lg:grid-cols-2">
-            <div className="rounded-2xl border border-border bg-black/10">
-              <div className="border-b border-border px-4 py-3 text-sm font-medium text-rose-300">
-                Only on {diff?.branch_a ?? branchA}
+          <div className="grid gap-4 lg:grid-cols-2">
+            {/* Branch A panel */}
+            <div className="rounded-lg overflow-hidden" style={{ border: '1px solid rgba(255,255,255,0.06)' }}>
+              <div
+                className="flex items-center justify-between px-4 py-2.5"
+                style={{ background: 'rgba(244,63,94,0.04)', borderBottom: '1px solid rgba(255,255,255,0.06)' }}
+              >
+                <div className="flex items-center gap-2">
+                  <span className="h-2 w-2 rounded-full" style={{ background: '#f43f5e' }} />
+                  <span className="font-mono text-[13px] font-medium text-rose-300">{diff?.branch_a ?? branchA}</span>
+                </div>
+                <span className="text-[11px] text-text-muted">{onlyA.length} unique</span>
               </div>
-              <div className="space-y-3 p-4">
+              <div className="space-y-2 p-3" style={{ background: 'rgba(244,63,94,0.02)' }}>
                 {onlyA.length === 0 && (
-                  <div className="rounded-xl border border-dashed border-border px-4 py-5 text-sm text-slate-500">
-                    No unique memories on this side.
+                  <div className="px-3 py-5 text-center text-xs text-text-muted">
+                    No unique memories
                   </div>
                 )}
                 {onlyA.map(memory => (
@@ -291,14 +353,22 @@ export default function DiffView({ activeBranch, workspaceMode }: Props) {
               </div>
             </div>
 
-            <div className="rounded-2xl border border-border bg-black/10">
-              <div className="border-b border-border px-4 py-3 text-sm font-medium text-emerald-300">
-                Only on {diff?.branch_b ?? branchB}
+            {/* Branch B panel */}
+            <div className="rounded-lg overflow-hidden" style={{ border: '1px solid rgba(255,255,255,0.06)' }}>
+              <div
+                className="flex items-center justify-between px-4 py-2.5"
+                style={{ background: 'rgba(16,185,129,0.04)', borderBottom: '1px solid rgba(255,255,255,0.06)' }}
+              >
+                <div className="flex items-center gap-2">
+                  <span className="h-2 w-2 rounded-full" style={{ background: '#10b981' }} />
+                  <span className="font-mono text-[13px] font-medium text-emerald-300">{diff?.branch_b ?? branchB}</span>
+                </div>
+                <span className="text-[11px] text-text-muted">{onlyB.length} unique</span>
               </div>
-              <div className="space-y-3 p-4">
+              <div className="space-y-2 p-3" style={{ background: 'rgba(16,185,129,0.02)' }}>
                 {onlyB.length === 0 && (
-                  <div className="rounded-xl border border-dashed border-border px-4 py-5 text-sm text-slate-500">
-                    No unique memories on this side.
+                  <div className="px-3 py-5 text-center text-xs text-text-muted">
+                    No unique memories
                   </div>
                 )}
                 {onlyB.map(memory => (

@@ -23,7 +23,7 @@ const EDGE_COLORS: Record<string, string> = {
   PARENT_OF: '#10b981',
   BRANCHED_FROM: '#f43f5e',
   SUPERSEDES: '#8b5cf6',
-  ON_BRANCH: '#64748b',
+  ON_BRANCH: '#3f3f46',
 }
 
 const DEMO_NODE_LABELS = new Set(['Memory', 'Commit', 'Branch'])
@@ -44,21 +44,21 @@ function getDisplayLabel(node: GraphNode) {
   const properties = node.properties ?? {}
 
   if (node.label === 'Memory') {
-    return truncate(String(properties.content ?? properties.id ?? node.id), 40)
+    return truncate(String(properties.content ?? properties.id ?? node.id), 32)
   }
 
   if (node.label === 'Commit') {
     if (isMergeCommit(node)) {
-      return truncate(String(properties.message ?? `Merge ${properties.mergedFromBranch ?? 'branch'}`), 40)
+      return truncate(String(properties.message ?? `Merge ${properties.mergedFromBranch ?? 'branch'}`), 32)
     }
-    return truncate(String(properties.message ?? properties.id ?? node.id), 36)
+    return truncate(String(properties.message ?? properties.id ?? node.id), 30)
   }
 
   if (node.label === 'Branch') {
     return String(properties.name ?? node.id)
   }
 
-  return truncate(String(properties.name ?? properties.id ?? node.id), 24)
+  return truncate(String(properties.name ?? properties.id ?? node.id), 20)
 }
 
 function isMergeCommit(node: GraphNode) {
@@ -98,7 +98,7 @@ export function toCytoscapeElements(data: GraphData): cytoscape.ElementDefinitio
             ? 'diamond'
             : 'round-rectangle'
           : 'ellipse'
-      const size = node.label === 'Branch' ? 62 : node.label === 'Commit' ? (mergeCommit ? 58 : 50) : 36
+      const size = node.label === 'Branch' ? 58 : node.label === 'Commit' ? (mergeCommit ? 54 : 46) : 32
 
       return {
         data: {
@@ -125,7 +125,7 @@ export function toCytoscapeElements(data: GraphData): cytoscape.ElementDefinitio
         target: edge.target,
         label: edge.relationship,
         relationship: edge.relationship,
-        color: EDGE_COLORS[edge.relationship] ?? '#475569',
+        color: EDGE_COLORS[edge.relationship] ?? '#2a2a35',
       },
       classes: edge.relationship,
     })),
@@ -135,7 +135,7 @@ export function toCytoscapeElements(data: GraphData): cytoscape.ElementDefinitio
 export const GRAPH_LEGEND_ITEMS = [
   { label: 'Decision', color: MEMORY_TYPE_COLORS.decision },
   { label: 'Fact', color: MEMORY_TYPE_COLORS.fact },
-  { label: 'Action Item', color: MEMORY_TYPE_COLORS.action_item },
+  { label: 'Action', color: MEMORY_TYPE_COLORS.action_item },
   { label: 'Question', color: MEMORY_TYPE_COLORS.question },
   { label: 'Commit', color: NODE_COLORS.Commit },
   { label: 'Branch', color: NODE_COLORS.Branch },
@@ -147,21 +147,26 @@ export const cytoscapeStyle: Array<{ selector: string; style: Record<string, unk
     style: {
       'background-color': 'data(color)',
       label: 'data(label)',
-      color: '#e2e8f0',
-      'font-size': '10px',
+      color: '#d4d4d8',
+      'font-family': 'Inter, system-ui, sans-serif',
+      'font-size': '9px',
       'font-weight': 500,
       'text-wrap': 'wrap',
-      'text-max-width': '110px',
+      'text-max-width': '100px',
       'text-valign': 'bottom',
-      'text-margin-y': 8,
+      'text-margin-y': 7,
       'text-halign': 'center',
-      'overlay-padding': '6px',
+      'text-background-color': '#09090b',
+      'text-background-opacity': 0.75,
+      'text-background-padding': '2px',
+      'overlay-padding': '4px',
       'overlay-opacity': 0,
       width: 'data(size)',
       height: 'data(size)',
       shape: 'data(shape)',
-      'border-width': 1.5,
-      'border-color': '#e2e8f044',
+      'border-width': 1,
+      'border-color': 'rgba(255,255,255,0.08)',
+      'background-opacity': 0.85,
     },
   },
   {
@@ -170,54 +175,67 @@ export const cytoscapeStyle: Array<{ selector: string; style: Record<string, unk
       'line-color': 'data(color)',
       'target-arrow-color': 'data(color)',
       'target-arrow-shape': 'triangle',
+      'arrow-scale': 0.7,
       'curve-style': 'bezier',
       label: 'data(label)',
-      color: '#94a3b8',
-      'font-size': '8px',
-      'text-background-color': '#0f172acc',
-      'text-background-opacity': 1,
+      color: '#52525b',
+      'font-family': 'Inter, system-ui, sans-serif',
+      'font-size': '7px',
+      'text-background-color': '#09090b',
+      'text-background-opacity': 0.85,
       'text-background-padding': '2px',
-      width: 2,
+      width: 1.5,
+      'line-opacity': 0.6,
     },
   },
   {
     selector: '.highlighted',
     style: {
       opacity: 1,
-      'border-width': 3,
-      'border-color': '#ffffff',
-      width: 'mapData(size, 30, 70, 40, 74)',
-      height: 'mapData(size, 30, 70, 40, 74)',
+      'border-width': 2.5,
+      'border-color': '#f0f0f3',
+      'background-opacity': 1,
+      'line-opacity': 1,
     },
   },
   {
     selector: '.merge-commit',
     style: {
-      'border-width': 3,
-      'border-color': '#f8fafc',
+      'border-width': 2.5,
+      'border-color': '#f0f0f3',
       'background-color': '#22c55e',
+      'background-opacity': 1,
       'font-weight': 700,
     },
   },
   {
     selector: 'edge.highlighted',
     style: {
-      width: 3.5,
-      'line-color': '#f8fafc',
-      'target-arrow-color': '#f8fafc',
-      color: '#f8fafc',
+      width: 2.5,
+      'line-color': '#a1a1aa',
+      'target-arrow-color': '#a1a1aa',
+      color: '#d4d4d8',
+      'line-opacity': 1,
     },
   },
   {
     selector: '.faded',
     style: {
-      opacity: 0.16,
+      opacity: 0.12,
     },
   },
   {
     selector: 'edge.BRANCHED_FROM',
     style: {
       'line-style': 'dashed',
+      'line-dash-pattern': [6, 4],
+    },
+  },
+  {
+    selector: 'edge.SUPERSEDES',
+    style: {
+      'line-style': 'dashed',
+      'line-dash-pattern': [4, 3],
     },
   },
 ]

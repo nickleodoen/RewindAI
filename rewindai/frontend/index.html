@@ -4,27 +4,93 @@
     <meta charset="UTF-8" />
     <meta name="viewport" content="width=device-width, initial-scale=1.0" />
     <title>RewindAI — Git for AI Memory</title>
+    <link rel="preconnect" href="https://fonts.googleapis.com" />
+    <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
+    <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&family=JetBrains+Mono:wght@400;500&display=swap" rel="stylesheet" />
     <script src="https://cdn.tailwindcss.com"></script>
     <script>
       tailwind.config = {
         darkMode: 'class',
         theme: {
           extend: {
+            fontFamily: {
+              sans: ['Inter', 'system-ui', '-apple-system', 'sans-serif'],
+              mono: ['JetBrains Mono', 'ui-monospace', 'monospace'],
+            },
             colors: {
-              bg: '#0a0a0f',
-              surface: '#141420',
-              border: '#1e1e2e',
-              accent: '#8b5cf6',
-            }
+              bg: {
+                DEFAULT: '#09090b',
+                raised: '#0f0f13',
+                surface: '#151519',
+                hover: '#1a1a20',
+                overlay: '#1e1e25',
+              },
+              border: {
+                DEFAULT: 'rgba(255,255,255,0.06)',
+                subtle: 'rgba(255,255,255,0.04)',
+                strong: 'rgba(255,255,255,0.1)',
+              },
+              text: {
+                primary: '#f0f0f3',
+                secondary: '#a1a1aa',
+                tertiary: '#6b6b76',
+                muted: '#52525b',
+              },
+              accent: {
+                DEFAULT: '#8b5cf6',
+                muted: '#7c3aed',
+                dim: 'rgba(139,92,246,0.12)',
+                glow: 'rgba(139,92,246,0.25)',
+              },
+              emerald: {
+                dim: 'rgba(16,185,129,0.12)',
+              },
+              rose: {
+                dim: 'rgba(244,63,94,0.12)',
+              },
+              amber: {
+                dim: 'rgba(245,158,11,0.12)',
+              },
+            },
+            borderRadius: {
+              'card': '10px',
+            },
+            boxShadow: {
+              'card': '0 1px 2px rgba(0,0,0,0.3), 0 0 0 1px rgba(255,255,255,0.04)',
+              'elevated': '0 4px 16px rgba(0,0,0,0.4), 0 0 0 1px rgba(255,255,255,0.06)',
+              'glow-purple': '0 0 20px rgba(139,92,246,0.15)',
+              'glow-green': '0 0 12px rgba(16,185,129,0.12)',
+            },
           }
         }
       }
     </script>
     <style>
-      body { background: #0a0a0f; color: #e4e4e7; }
-      ::-webkit-scrollbar { width: 6px; }
-      ::-webkit-scrollbar-track { background: #141420; }
-      ::-webkit-scrollbar-thumb { background: #3f3f5f; border-radius: 3px; }
+      * { box-sizing: border-box; }
+      body {
+        background: #09090b;
+        color: #f0f0f3;
+        font-family: 'Inter', system-ui, -apple-system, sans-serif;
+        -webkit-font-smoothing: antialiased;
+        -moz-osx-font-smoothing: grayscale;
+      }
+      ::-webkit-scrollbar { width: 5px; height: 5px; }
+      ::-webkit-scrollbar-track { background: transparent; }
+      ::-webkit-scrollbar-thumb { background: rgba(255,255,255,0.08); border-radius: 3px; }
+      ::-webkit-scrollbar-thumb:hover { background: rgba(255,255,255,0.14); }
+      ::selection { background: rgba(139,92,246,0.3); }
+
+      /* Subtle transitions on interactive elements */
+      button, a, select { transition: all 0.15s ease; }
+
+      /* Custom focus ring */
+      :focus-visible {
+        outline: 2px solid rgba(139,92,246,0.5);
+        outline-offset: 2px;
+      }
+
+      /* Prevent layout shift from scrollbar */
+      html { overflow-y: scroll; }
     </style>
   </head>
   <body class="dark">

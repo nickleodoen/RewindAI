@@ -252,6 +252,30 @@ class WorkspaceStatusResponse(BaseModel):
     summary: str
 
 
+class CommitSnapshotResponse(BaseModel):
+    """Full snapshot of AI memory state at a specific commit."""
+
+    commit: CommitResponse
+    branch_name: str
+    parent_ids: list[str] = Field(default_factory=list)
+    is_merge: bool = False
+    merged_from_branch: str | None = None
+    merge_base_commit_id: str | None = None
+
+    # Memory state
+    active_memories: list[MemoryResponse] = Field(default_factory=list)
+    active_memory_count: int = 0
+    memory_breakdown: dict[str, int] = Field(default_factory=dict)
+    grouped_memories: dict[str, list[MemoryResponse]] = Field(default_factory=dict)
+
+    # Context
+    context_summary: str = ""
+    reconstructed_context: str | None = None
+
+    # Compaction
+    compaction_snapshot_count: int = 0
+
+
 class HealthResponse(BaseModel):
     status: str = "ok"
     neo4j: str = "unknown"

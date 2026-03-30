@@ -11,10 +11,10 @@ interface Props {
 
 function formatDate(value?: string) {
   if (!value) {
-    return 'Unknown date'
+    return '—'
   }
 
-  return new Date(value).toLocaleDateString()
+  return new Date(value).toLocaleDateString(undefined, { month: 'short', day: 'numeric' })
 }
 
 function truncateMessage(message: string, max = 50) {
@@ -108,109 +108,139 @@ export default function BranchManager({ activeBranch, onCheckout, onBranchChange
 
   return (
     <div className="flex h-full flex-col">
-      <div className="flex items-center justify-between border-b border-border px-4 py-4">
-        <div>
-          <div className="text-xs uppercase tracking-[0.16em] text-slate-500">Branches</div>
-          <div className="mt-1 text-sm text-slate-300">Checkout any commit to rewind context</div>
+      {/* Section header */}
+      <div className="flex items-center justify-between px-4 py-3" style={{ borderBottom: '1px solid rgba(255,255,255,0.06)' }}>
+        <div className="flex items-center gap-2">
+          <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="#8b5cf6" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" className="opacity-70">
+            <line x1="6" y1="3" x2="6" y2="15" />
+            <circle cx="18" cy="6" r="3" />
+            <circle cx="6" cy="18" r="3" />
+            <path d="M18 9a9 9 0 0 1-9 9" />
+          </svg>
+          <span className="text-xs font-medium text-text-secondary tracking-wide">Branches</span>
         </div>
         <button
           onClick={handleNewBranch}
-          className="rounded-lg border border-purple-500/35 bg-purple-500/10 px-3 py-2 text-xs font-medium text-purple-200 transition hover:bg-purple-500/20"
+          className="flex items-center gap-1.5 rounded-md px-2.5 py-1.5 text-[11px] font-medium text-accent transition-colors hover:text-white"
+          style={{ background: 'rgba(139,92,246,0.08)' }}
         >
-          New Branch
+          <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5" strokeLinecap="round">
+            <line x1="12" y1="5" x2="12" y2="19" />
+            <line x1="5" y1="12" x2="19" y2="12" />
+          </svg>
+          New
         </button>
       </div>
 
-      <div className="flex-1 overflow-y-auto px-4 py-4">
+      {/* Branch list */}
+      <div className="flex-1 overflow-y-auto px-3 py-2">
         {loading && (
-          <div className="text-sm text-slate-500 animate-pulse">Loading branches...</div>
+          <div className="flex items-center gap-2 px-2 py-6 text-xs text-text-muted">
+            <div className="h-3 w-3 animate-spin rounded-full border border-text-muted border-t-accent" />
+            Loading branches...
+          </div>
         )}
 
         {error && (
-          <div className="mb-4 rounded-xl border border-red-500/30 bg-red-500/10 px-4 py-3 text-sm text-red-200">
-            Failed to load branches. Check backend connection.
-            <div className="mt-1 text-xs text-red-300/80">{error}</div>
+          <div className="mx-1 rounded-lg px-3 py-2.5 text-xs text-red-300" style={{ background: 'rgba(239,68,68,0.08)', border: '1px solid rgba(239,68,68,0.15)' }}>
+            {error}
           </div>
         )}
 
         {!loading && branches.length === 0 && !error && (
-          <div className="rounded-xl border border-dashed border-border px-4 py-6 text-sm text-slate-500">
-            No branches found yet.
+          <div className="px-2 py-8 text-center text-xs text-text-muted">
+            No branches yet
           </div>
         )}
 
-        <div className="space-y-3">
+        <div className="space-y-1">
           {(branches ?? []).map(branch => {
             const commits = commitsByBranch[branch.name] ?? []
             const isExpanded = expandedBranch === branch.name
             const isActive = branch.name === activeBranch
 
             return (
-              <div key={branch.name} className="rounded-2xl border border-border bg-surface/60">
+              <div key={branch.name}>
+                {/* Branch row */}
                 <button
                   onClick={() => {
                     setExpandedBranch(branch.name)
                     onBranchChange(branch.name)
                   }}
-                  className="flex w-full items-center justify-between gap-3 px-4 py-3 text-left"
+                  className="group flex w-full items-center gap-2.5 rounded-lg px-2.5 py-2 text-left transition-colors"
+                  style={{
+                    background: isActive ? 'rgba(139,92,246,0.08)' : 'transparent',
+                  }}
                 >
-                  <div className="flex min-w-0 items-center gap-3">
-                    <span
-                      className="h-2.5 w-2.5 rounded-full"
-                      style={{ background: isActive ? '#10b981' : '#64748b' }}
-                    />
-                    <div className="min-w-0">
-                      <div className="font-mono text-sm text-slate-100">{branch.name}</div>
-                      <div className="text-xs text-slate-500">
-                        {commits.length} commit{commits.length === 1 ? '' : 's'} • created {formatDate(branch.created_at)}
-                      </div>
-                      {branch.head_message && (
-                        <div className="mt-1 text-xs text-slate-400">
-                          tip: {truncateMessage(branch.head_message, 58)}
-                        </div>
-                      )}
+                  {/* Branch indicator dot */}
+                  <span
+                    className="h-2 w-2 flex-shrink-0 rounded-full"
+                    style={{
+                      background: isActive ? '#10b981' : '#3f3f46',
+                      boxShadow: isActive ? '0 0 6px rgba(16,185,129,0.4)' : 'none',
+                    }}
+                  />
+
+                  <div className="min-w-0 flex-1">
+                    <div className="flex items-center gap-2">
+                      <span className={`font-mono text-[13px] ${isActive ? 'text-text-primary font-medium' : 'text-text-secondary group-hover:text-text-primary'}`}>
+                        {branch.name}
+                      </span>
+                      <span className="text-[10px] text-text-muted">{commits.length}</span>
                     </div>
+                    {branch.head_message && (
+                      <div className="mt-0.5 text-[11px] text-text-muted truncate">
+                        {truncateMessage(branch.head_message, 40)}
+                      </div>
+                    )}
                   </div>
-                  <span className="text-xs text-slate-500">{isExpanded ? 'Hide' : 'Show'}</span>
+
+                  <svg
+                    width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2"
+                    className={`flex-shrink-0 text-text-muted transition-transform ${isExpanded ? 'rotate-90' : ''}`}
+                  >
+                    <polyline points="9 18 15 12 9 6" />
+                  </svg>
                 </button>
 
+                {/* Commit list */}
                 {isExpanded && (
-                  <div className="space-y-2 border-t border-border px-3 py-3">
+                  <div className="ml-4 mt-0.5 space-y-0.5 border-l pl-3 pb-1" style={{ borderColor: 'rgba(255,255,255,0.06)' }}>
                     {commits.length === 0 && (
-                      <div className="rounded-xl border border-dashed border-border px-3 py-4 text-xs text-slate-500">
-                        No commits on this branch yet.
-                      </div>
+                      <div className="py-3 text-[11px] text-text-muted">No commits yet</div>
                     )}
 
                     {commits.map(commit => (
                       <div
                         key={commit.id}
-                        className="rounded-xl border border-white/5 bg-black/10 px-3 py-3"
-                        style={{
-                          borderLeft: `3px solid ${branch.name === 'main' ? '#10b981' : '#8b5cf6'}`,
-                        }}
+                        className="group/commit flex items-start justify-between gap-2 rounded-md px-2 py-1.5 transition-colors hover:bg-white/[0.03]"
                       >
-                        <div className="flex items-start justify-between gap-3">
-                          <div className="min-w-0">
-                            <div className="flex items-center gap-2 text-sm text-slate-100">
-                              <span>{truncateMessage(commit.message || 'Untitled commit')}</span>
-                              {commit.is_merge && (
-                                <span className="rounded-full bg-emerald-500/15 px-2 py-0.5 text-[10px] uppercase tracking-[0.12em] text-emerald-300">
-                                  merge
-                                </span>
-                              )}
-                            </div>
-                            <div className="mt-1 text-xs text-slate-500">
-                              {formatDate(commit.created_at)} • {commit.id.slice(0, 8)}
-                            </div>
+                        <div className="min-w-0 flex-1">
+                          <div className="flex items-center gap-1.5">
+                            <span className="text-[12px] text-text-secondary group-hover/commit:text-text-primary truncate">
+                              {truncateMessage(commit.message || 'Untitled', 36)}
+                            </span>
+                            {commit.is_merge && (
+                              <span
+                                className="flex-shrink-0 rounded px-1 py-px text-[9px] font-medium uppercase text-emerald-400"
+                                style={{ background: 'rgba(16,185,129,0.12)' }}
+                              >
+                                merge
+                              </span>
+                            )}
                           </div>
-                          <button
-                            onClick={() => onCheckout(branch.name, commit.id, commit.message)}
-                            className="shrink-0 rounded-md border border-slate-600 px-2 py-1 text-[11px] text-slate-200 transition hover:border-purple-400 hover:text-purple-200"
-                          >
-                            Checkout
-                          </button>
+                          <div className="mt-0.5 flex items-center gap-2 text-[10px] text-text-muted">
+                            <span className="font-mono">{commit.id.slice(0, 7)}</span>
+                            <span>{formatDate(commit.created_at)}</span>
+                          </div>
                         </div>
+                        <button
+                          onClick={() => onCheckout(branch.name, commit.id, commit.message)}
+                          className="flex-shrink-0 rounded px-2 py-1 text-[10px] font-medium text-text-muted opacity-0 transition-all group-hover/commit:opacity-100 hover:text-accent"
+                          style={{ background: 'rgba(255,255,255,0.04)' }}
+                        >
+                          checkout
+                        </button>
                       </div>
                     ))}
                   </div>
