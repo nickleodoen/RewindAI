@@ -13,6 +13,24 @@ from app.compaction.interceptor import handle_compaction_event
 logger = logging.getLogger(__name__)
 
 
+def _make_claude_request(client: anthropic.Anthropic, messages: list[dict]):
+    """Make Claude API request with compaction enabled."""
+    return client.beta.messages.create(
+        betas=["compact-2026-01-12"],
+        model="claude-sonnet-4-6",
+        max_tokens=4096,
+        messages=messages,
+        context_management={
+            "edits": [{
+                "type": "compact_20260112",
+                "trigger": {"type": "input_tokens", "value": settings.compaction_threshold},
+                "pause_after_compaction": True,
+                "instructions": "Preserve: decisions+rationale, facts, open questions, action items, dependencies.",
+            }]
+        },
+    )
+
+
 async def chat(
     session_id: str,
     user_message: str,
@@ -50,68 +68,55 @@ async def chat(
             })
 
     # 3. Call Claude API with compaction enabled
-    client = anthropic.Anthropic(api_key=settings.anthropic_api_key)
-
-    response = client.beta.messages.create(
-        betas=["compact-2026-01-12"],
-        model="claude-sonnet-4-6",
-        max_tokens=4096,
-        messages=messages,
-        context_management={
-            "edits": [{
-                "type": "compact_20260112",
-                "trigger": {"type": "input_tokens", "value": settings.compaction_threshold},
-                "pause_after_compaction": True,
-                "instructions": "Preserve: decisions+rationale, facts, open questions, action items, dependencies.",
-            }]
-        },
-    )
-
     compaction_occurred = False
     memories_extracted = 0
     assistant_text = ""
 
-    # 4. Handle compaction if it occurred
-    if response.stop_reason == "compaction":
-        compaction_occurred = True
-        compaction_block = response.content[0]
-        compaction_content = compaction_block.text if hasattr(compaction_block, "text") else str(compaction_block)
-
-        # Collect pre-compaction messages for extraction
-        pre_compaction_messages = messages[:]
-
-        memories_extracted = await handle_compaction_event(
-            driver=driver,
-            session_id=session_id,
-            branch_name=branch_name,
-            user_id=user_id,
-            compaction_content=compaction_content,
-            pre_compaction_messages=pre_compaction_messages,
-            token_count=response.usage.input_tokens if response.usage else 0,
-        )
-
-        # Continue session with compacted context
-        compacted_messages = [{"role": "assistant", "content": [compaction_block]}]
-        compacted_messages.append({"role": "user", "content": user_message})
-
-        continuation = client.beta.messages.create(
-            betas=["compact-2026-01-12"],
-            model="claude-sonnet-4-6",
-            max_tokens=4096,
-            messages=compacted_messages,
-            context_management={
-                "edits": [{
-                    "type": "compact_20260112",
-                    "trigger": {"type": "input_tokens", "value": settings.compaction_threshold},
-                    "pause_after_compaction": True,
-                    "instructions": "Preserve: decisions+rationale, facts, open questions, action items, dependencies.",
-                }]
-            },
-        )
-
-        assistant_text = continuation.content[0].text if continuation.content else ""
+    if not settings.anthropic_api_key or settings.anthropic_api_key == "your_key_here":
+        # Mock mode — no API key configured
+        assistant_text = f"[Mock] I received your message: '{user_message[:100]}'. Claude API is not configured — set ANTHROPIC_API_KEY in .env to enable real responses."
+        logger.warning("Chat in mock mode — no ANTHROPIC_API_KEY configured")
     else:
-        assistant_text = response.content[0].text if response.content else ""
+        try:
+            client = anthropic.Anthropic(api_key=settings.anthropic_api_key)
+            response = _make_claude_request(client, messages)
+
+            # 4. Handle compaction if it occurred
+            if response.stop_reason == "compaction":
+                compaction_occurred = True
+                compaction_block = response.content[0]
+                compaction_content = compaction_block.text if hasattr(compaction_block, "text") else str(compaction_block)
+
+                pre_compaction_messages = messages[:]
+
+                memories_extracted = await handle_compaction_event(
+                    driver=driver,
+                    session_id=session_id,
+                    branch_name=branch_name,
+                    user_id=user_id,
+                    compaction_content=compaction_content,
+                    pre_compaction_messages=pre_compaction_messages,
+                    token_count=response.usage.input_tokens if response.usage else 0,
+                )
+
+                # Continue session with compacted context
+                compacted_messages = [{"role": "assistant", "content": [compaction_block]}]
+                compacted_messages.append({"role": "user", "content": user_message})
+
+                continuation = _make_claude_request(client, compacted_messages)
+                assistant_text = continuation.content[0].text if continuation.content else ""
+            else:
+                assistant_text = response.content[0].text if response.content else ""
+
+        except anthropic.BadRequestError as e:
+            logger.error("Claude API error: %s", e)
+            assistant_text = f"[API Error] {e.message if hasattr(e, 'message') else str(e)}"
+        except anthropic.AuthenticationError as e:
+            logger.error("Claude API auth error: %s", e)
+            assistant_text = "[API Error] Authentication failed. Check your ANTHROPIC_API_KEY."
+        except Exception as e:
+            logger.error("Claude API unexpected error: %s", e)
+            assistant_text = f"[API Error] {str(e)}"
 
     # 5. Store assistant turn
     assistant_turn_id = str(uuid.uuid4())
