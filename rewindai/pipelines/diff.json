@@ -1,0 +1,40 @@
+{
+  "name": "diff",
+  "description": "Compare memories between two branches",
+  "nodes": [
+    {
+      "id": "input",
+      "type": "input",
+      "config": {
+        "schema": {
+          "branch_a_memories": "array",
+          "branch_b_memories": "array"
+        }
+      }
+    },
+    {
+      "id": "comparator",
+      "type": "llm",
+      "config": {
+        "provider": "anthropic",
+        "model": "claude-sonnet-4-6",
+        "max_tokens": 4096,
+        "system_prompt": "Compare two sets of team memories (branch A and branch B). Return JSON: {only_a: [...memories unique to A], only_b: [...memories unique to B], conflicts: [...memories that contradict], shared: [...memories in both]}. Be precise about which decisions differ."
+      },
+      "inputs": ["input.branch_a_memories", "input.branch_b_memories"]
+    },
+    {
+      "id": "parser",
+      "type": "json_parser",
+      "config": {
+        "schema": "object"
+      },
+      "inputs": ["comparator.output"]
+    },
+    {
+      "id": "output",
+      "type": "output",
+      "inputs": ["parser.parsed"]
+    }
+  ]
+}

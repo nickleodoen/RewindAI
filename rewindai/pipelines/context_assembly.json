@@ -1,0 +1,42 @@
+{
+  "name": "context_assembly",
+  "description": "Assemble optimized context from memories and snapshots for checkout",
+  "nodes": [
+    {
+      "id": "input",
+      "type": "input",
+      "config": {
+        "schema": {
+          "memories": "array",
+          "snapshots": "array",
+          "token_budget": "number"
+        }
+      }
+    },
+    {
+      "id": "budgeter",
+      "type": "token_budget_chunker",
+      "config": {
+        "max_tokens": 4000,
+        "priority_order": ["decision", "fact", "action_item", "context", "question"]
+      },
+      "inputs": ["input.memories", "input.token_budget"]
+    },
+    {
+      "id": "synthesizer",
+      "type": "llm",
+      "config": {
+        "provider": "anthropic",
+        "model": "claude-sonnet-4-6",
+        "max_tokens": 4096,
+        "system_prompt": "Synthesize these team memories into a coherent context summary. Organize by: Decisions (with rationale), Key Facts, Action Items, Open Questions. Be concise but preserve all critical information. Stay under the token budget."
+      },
+      "inputs": ["budgeter.prioritized", "input.snapshots"]
+    },
+    {
+      "id": "output",
+      "type": "output",
+      "inputs": ["synthesizer.output"]
+    }
+  ]
+}

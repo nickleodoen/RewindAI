@@ -1,0 +1,22 @@
+version: "3.8"
+services:
+  neo4j:
+    image: neo4j:5-community
+    ports:
+      - "7474:7474"
+      - "7687:7687"
+    environment:
+      NEO4J_AUTH: neo4j/rewindai
+      NEO4J_PLUGINS: '["apoc"]'
+    volumes:
+      - neo4j_data:/data
+  rocketride:
+    image: rocketrideorg/rocketride-server:latest
+    ports:
+      - "8080:8080"
+    volumes:
+      - ./pipelines:/app/pipelines
+    environment:
+      - ANTHROPIC_API_KEY=${ANTHROPIC_API_KEY}
+volumes:
+  neo4j_data:

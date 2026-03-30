@@ -1,0 +1,49 @@
+{
+  "name": "extraction",
+  "description": "Extract structured memories from conversation text",
+  "nodes": [
+    {
+      "id": "input",
+      "type": "input",
+      "config": {
+        "schema": {
+          "conversation": "string"
+        }
+      }
+    },
+    {
+      "id": "chunker",
+      "type": "text_chunker",
+      "config": {
+        "chunk_size": 4000,
+        "overlap": 200,
+        "separator": "\n"
+      },
+      "inputs": ["input.conversation"]
+    },
+    {
+      "id": "extractor",
+      "type": "llm",
+      "config": {
+        "provider": "anthropic",
+        "model": "claude-sonnet-4-6",
+        "max_tokens": 4096,
+        "system_prompt": "You are a memory extraction engine. Given conversation chunks, extract structured memories as JSON arrays. Each memory: {id, type (decision|fact|context|action_item|question), content, tags[], depends_on[], supersedes[]}. Return ONLY valid JSON."
+      },
+      "inputs": ["chunker.chunks"]
+    },
+    {
+      "id": "parser",
+      "type": "json_parser",
+      "config": {
+        "schema": "array"
+      },
+      "inputs": ["extractor.output"]
+    },
+    {
+      "id": "output",
+      "type": "output",
+      "inputs": ["parser.parsed"]
+    }
+  ]
+}
