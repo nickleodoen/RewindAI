@@ -1,96 +1,223 @@
-import { useState } from 'react'
-import type { DiffResult } from '../types'
+import { useEffect, useState } from 'react'
+import type { DiffResult, Memory } from '../types'
 import { useApi } from '../hooks/useApi'
-import { NODE_COLORS } from '../utils/cytoscape'
+import { MEMORY_TYPE_COLORS, formatTypeLabel } from '../utils/cytoscape'
 
-export default function DiffView() {
-  const branches = ['main', 'graphql-exploration']
-  const [branchA, setBranchA] = useState(branches[0] || 'main')
-  const [branchB, setBranchB] = useState(branches[1] || '')
-  const [diff, setDiff] = useState<DiffResult | null>(null)
-  const api = useApi()
-
-  const runDiff = async () => {
-    if (!branchA || !branchB || branchA === branchB) return
-    const result = await api.diffBranches(branchA, branchB)
-    setDiff(result)
-  }
+function MemoryCard({ memory }: { memory: Memory }) {
+  const badgeColor = MEMORY_TYPE_COLORS[memory.type as keyof typeof MEMORY_TYPE_COLORS] ?? '#64748b'
 
   return (
-    <div className="h-full flex flex-col">
-      {/* Controls */}
-      <div className="flex items-center gap-2 p-3 border-b border-border">
-        <select
-          value={branchA}
-          onChange={e => setBranchA(e.target.value)}
-          className="bg-surface border border-border rounded px-2 py-1 text-xs text-zinc-200"
+    <div className="rounded-2xl border border-border bg-surface/75 p-4 shadow-sm">
+      <div className="mb-3 flex flex-wrap items-center gap-2">
+        <span
+          className="rounded-full px-2 py-1 text-[11px] font-medium text-white"
+          style={{ background: badgeColor }}
         >
-          {branches.map(b => <option key={b} value={b}>{b}</option>)}
-        </select>
-        <span className="text-xs text-zinc-500">vs</span>
-        <select
-          value={branchB}
-          onChange={e => setBranchB(e.target.value)}
-          className="bg-surface border border-border rounded px-2 py-1 text-xs text-zinc-200"
-        >
-          <option value="">Select branch...</option>
-          {branches.filter(b => b !== branchA).map(b => (
-            <option key={b} value={b}>{b}</option>
-          ))}
-        </select>
-        <button
-          onClick={runDiff}
-          disabled={!branchB || branchA === branchB}
-          className="px-3 py-1 bg-accent text-white text-xs rounded hover:bg-purple-500 disabled:opacity-50"
-        >
-          Diff
-        </button>
+          {formatTypeLabel(memory.type)}
+        </span>
+        {(memory.tags ?? []).map(tag => (
+          <span key={tag} className="rounded-full bg-black/20 px-2 py-1 text-[11px] text-slate-400">
+            {tag}
+          </span>
+        ))}
+      </div>
+      <div className="text-sm leading-6 text-slate-100">{memory.content}</div>
+    </div>
+  )
+}
+
+export default function DiffView() {
+  const api = useApi()
+  const [branches, setBranches] = useState<string[]>([])
+  const [branchA, setBranchA] = useState('main')
+  const [branchB, setBranchB] = useState('graphql-exploration')
+  const [diff, setDiff] = useState<DiffResult | null>(null)
+  const [loadingBranches, setLoadingBranches] = useState(false)
+  const [loadingDiff, setLoadingDiff] = useState(false)
+  const [error, setError] = useState<string | null>(null)
+  const [refreshTick, setRefreshTick] = useState(0)
+
+  useEffect(() => {
+    let cancelled = false
+
+    const loadBranches = async () => {
+      setLoadingBranches(true)
+      setError(null)
+
+      try {
+        const fetchedBranches = await api.listBranches()
+        const names = (fetchedBranches ?? []).map(branch => branch.name)
+        const defaultA = names.includes('main') ? 'main' : names[0] ?? ''
+        const defaultB = names.includes('graphql-exploration')
+          ? 'graphql-exploration'
+          : names.find(name => name !== defaultA) ?? ''
+
+        if (!cancelled) {
+          setBranches(names)
+          setBranchA(defaultA)
+          setBranchB(defaultB)
+        }
+      } catch (loadError) {
+        if (!cancelled) {
+          setBranches([])
+          setError(loadError instanceof Error ? loadError.message : 'Failed to load branches.')
+        }
+      } finally {
+        if (!cancelled) {
+          setLoadingBranches(false)
+        }
+      }
+    }
+
+    void loadBranches()
+
+    return () => {
+      cancelled = true
+    }
+  }, [])
+
+  useEffect(() => {
+    let cancelled = false
+
+    const loadDiff = async () => {
+      if (!branchA || !branchB || branchA === branchB) {
+        setDiff(null)
+        return
+      }
+
+      setLoadingDiff(true)
+      setError(null)
+
+      try {
+        const result = await api.diffBranches(branchA, branchB)
+        if (!cancelled) {
+          setDiff(result)
+        }
+      } catch (loadError) {
+        if (!cancelled) {
+          setDiff(null)
+          setError(loadError instanceof Error ? loadError.message : 'Failed to compare branches.')
+        }
+      } finally {
+        if (!cancelled) {
+          setLoadingDiff(false)
+        }
+      }
+    }
+
+    void loadDiff()
+
+    return () => {
+      cancelled = true
+    }
+  }, [branchA, branchB, refreshTick])
+
+  const onlyA = diff?.only_a ?? []
+  const onlyB = diff?.only_b ?? []
+  const readyToCompare = Boolean(branchA && branchB && branchA !== branchB)
+  const identical = !loadingDiff && diff && onlyA.length === 0 && onlyB.length === 0
+
+  return (
+    <div className="flex h-full flex-col" style={{ background: '#0b0b12' }}>
+      <div className="border-b border-border px-5 py-4">
+        <div className="text-xs uppercase tracking-[0.16em] text-slate-500">Branch Diff</div>
+        <div className="mt-3 flex flex-wrap items-center gap-3">
+          <select
+            value={branchA}
+            onChange={event => setBranchA(event.target.value)}
+            className="rounded-xl border border-border bg-surface px-3 py-2 text-sm text-slate-100 outline-none"
+          >
+            {(branches ?? []).map(branch => (
+              <option key={branch} value={branch}>
+                {branch}
+              </option>
+            ))}
+          </select>
+          <span className="text-sm text-slate-500">vs</span>
+          <select
+            value={branchB}
+            onChange={event => setBranchB(event.target.value)}
+            className="rounded-xl border border-border bg-surface px-3 py-2 text-sm text-slate-100 outline-none"
+          >
+            {(branches ?? []).map(branch => (
+              <option key={branch} value={branch}>
+                {branch}
+              </option>
+            ))}
+          </select>
+          <button
+            onClick={() => setRefreshTick(prev => prev + 1)}
+            className="rounded-xl border border-slate-600 px-3 py-2 text-sm text-slate-200 transition hover:border-purple-400 hover:text-purple-200"
+          >
+            Refresh
+          </button>
+        </div>
       </div>
 
-      {/* Diff result */}
-      {diff && (
-        <div className="flex-1 overflow-y-auto grid grid-cols-2 gap-0">
-          {/* Branch A */}
-          <div className="border-r border-border p-3">
-            <div className="text-xs font-medium text-rose-400 mb-2">
-              Only in {diff.branch_a} ({diff.only_a.length})
-            </div>
-            {diff.only_a.map(m => (
-              <div key={m.id} className="mb-2 p-2 bg-rose-500/5 rounded border border-rose-500/20">
-                <div className="flex items-center gap-1.5 mb-1">
-                  <div className="w-2 h-2 rounded-full" style={{ backgroundColor: NODE_COLORS[m.type] || '#64748b' }} />
-                  <span className="text-[10px] text-zinc-500">{m.type.replace('_', ' ')}</span>
-                </div>
-                <p className="text-xs text-zinc-300">{m.content}</p>
-              </div>
-            ))}
-            {diff.only_a.length === 0 && <p className="text-xs text-zinc-600">No unique memories</p>}
-          </div>
+      <div className="flex-1 overflow-y-auto px-5 py-5">
+        {loadingBranches && (
+          <div className="text-sm text-slate-500 animate-pulse">Loading branches...</div>
+        )}
 
-          {/* Branch B */}
-          <div className="p-3">
-            <div className="text-xs font-medium text-emerald-400 mb-2">
-              Only in {diff.branch_b} ({diff.only_b.length})
-            </div>
-            {diff.only_b.map(m => (
-              <div key={m.id} className="mb-2 p-2 bg-emerald-500/5 rounded border border-emerald-500/20">
-                <div className="flex items-center gap-1.5 mb-1">
-                  <div className="w-2 h-2 rounded-full" style={{ backgroundColor: NODE_COLORS[m.type] || '#64748b' }} />
-                  <span className="text-[10px] text-zinc-500">{m.type.replace('_', ' ')}</span>
-                </div>
-                <p className="text-xs text-zinc-300">{m.content}</p>
-              </div>
-            ))}
-            {diff.only_b.length === 0 && <p className="text-xs text-zinc-600">No unique memories</p>}
-          </div>
-        </div>
-      )}
+        {loadingDiff && (
+          <div className="mb-4 text-sm text-slate-500 animate-pulse">Loading diff...</div>
+        )}
 
-      {!diff && (
-        <div className="flex-1 flex items-center justify-center">
-          <p className="text-zinc-600 text-sm">Select two branches and click Diff</p>
-        </div>
-      )}
+        {error && (
+          <div className="mb-4 rounded-xl border border-red-500/30 bg-red-500/10 px-4 py-3 text-sm text-red-200">
+            Failed to load diff. Check backend connection.
+            <div className="mt-1 text-xs text-red-300/80">{error}</div>
+          </div>
+        )}
+
+        {identical && (
+          <div className="mb-4 rounded-2xl border border-dashed border-border bg-surface/60 px-5 py-6 text-sm text-slate-400">
+            Branches are identical — no differences found.
+          </div>
+        )}
+
+        {!loadingBranches && !loadingDiff && !error && !readyToCompare && (
+          <div className="rounded-2xl border border-dashed border-border bg-surface/60 px-5 py-6 text-sm text-slate-400">
+            Select two different branches to compare them side by side.
+          </div>
+        )}
+
+        {!loadingBranches && !loadingDiff && !error && !identical && readyToCompare && (
+          <div className="grid h-full min-h-0 gap-4 lg:grid-cols-2">
+            <div className="rounded-2xl border border-border bg-black/10">
+              <div className="border-b border-border px-4 py-3 text-sm font-medium text-rose-300">
+                Only on {diff?.branch_a ?? branchA}
+              </div>
+              <div className="space-y-3 p-4">
+                {onlyA.length === 0 && (
+                  <div className="rounded-xl border border-dashed border-border px-4 py-5 text-sm text-slate-500">
+                    No unique memories on this side.
+                  </div>
+                )}
+                {onlyA.map(memory => (
+                  <MemoryCard key={memory.id} memory={memory} />
+                ))}
+              </div>
+            </div>
+
+            <div className="rounded-2xl border border-border bg-black/10">
+              <div className="border-b border-border px-4 py-3 text-sm font-medium text-emerald-300">
+                Only on {diff?.branch_b ?? branchB}
+              </div>
+              <div className="space-y-3 p-4">
+                {onlyB.length === 0 && (
+                  <div className="rounded-xl border border-dashed border-border px-4 py-5 text-sm text-slate-500">
+                    No unique memories on this side.
+                  </div>
+                )}
+                {onlyB.map(memory => (
+                  <MemoryCard key={memory.id} memory={memory} />
+                ))}
+              </div>
+            </div>
+          </div>
+        )}
+      </div>
     </div>
   )
 }
