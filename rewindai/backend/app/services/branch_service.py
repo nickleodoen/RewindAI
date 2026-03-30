@@ -213,45 +213,70 @@ async def get_timeline(driver: AsyncDriver, branch_name: str) -> list[dict]:
         return timeline
 
 
+def _serialize_props(d: dict) -> dict:
+    """Convert all Neo4j types in a dict to JSON-safe values."""
+    result = {}
+    for k, v in d.items():
+        if hasattr(v, "to_native"):
+            result[k] = v.to_native().isoformat()
+        elif hasattr(v, "isoformat") and not isinstance(v, str):
+            result[k] = v.isoformat()
+        elif isinstance(v, list):
+            result[k] = v
+        else:
+            result[k] = v
+    return result
+
+
 async def get_graph_neighborhood(driver: AsyncDriver, node_id: str) -> dict:
     """Get a node and its immediate neighbors for Cytoscape.js rendering."""
     nodes = {}
     edges = []
 
     async with driver.session() as session:
-        result = await session.run(queries.GRAPH_NEIGHBORHOOD, nodeId=node_id)
+        # Use explicit node return to get labels
+        result = await session.run(
+            """
+            MATCH (center {id: $nodeId})
+            OPTIONAL MATCH (center)-[r]-(neighbor)
+            RETURN center, labels(center) AS centerLabels,
+                   neighbor, labels(neighbor) AS neighborLabels,
+                   type(r) AS relType
+            """,
+            nodeId=node_id,
+        )
         records = await result.data()
         for record in records:
             center = record.get("center")
             if center:
                 cid = center.get("id") or center.get("name", str(center))
-                labels = list(center.labels) if hasattr(center, "labels") else []
+                center_labels = record.get("centerLabels", [])
                 nodes[cid] = {
                     "id": cid,
-                    "label": labels[0] if labels else "Node",
+                    "label": center_labels[0] if center_labels else "Node",
                     "type": center.get("type"),
-                    "properties": dict(center),
+                    "properties": _serialize_props(center),
                 }
 
             neighbor = record.get("neighbor")
             if neighbor:
                 nid = neighbor.get("id") or neighbor.get("name", str(neighbor))
-                labels = list(neighbor.labels) if hasattr(neighbor, "labels") else []
+                neighbor_labels = record.get("neighborLabels", [])
                 nodes[nid] = {
                     "id": nid,
-                    "label": labels[0] if labels else "Node",
+                    "label": neighbor_labels[0] if neighbor_labels else "Node",
                     "type": neighbor.get("type"),
-                    "properties": dict(neighbor),
+                    "properties": _serialize_props(neighbor),
                 }
 
-            rel = record.get("r")
-            if rel and center and neighbor:
+            rel_type = record.get("relType")
+            if rel_type and center and neighbor:
                 cid = center.get("id") or center.get("name", str(center))
                 nid = neighbor.get("id") or neighbor.get("name", str(neighbor))
                 edges.append({
                     "source": cid,
                     "target": nid,
-                    "relationship": rel.type if hasattr(rel, "type") else str(rel),
+                    "relationship": rel_type,
                 })
 
     return {"nodes": list(nodes.values()), "edges": edges}
