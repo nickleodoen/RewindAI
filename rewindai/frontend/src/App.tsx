@@ -70,6 +70,12 @@ export default function App() {
   }, [])
 
   const handleBranchChange = async (branchName: string) => {
+    if (branchName === activeBranch) {
+      setSelectedNode(null)
+      setActiveTab('graph')
+      return
+    }
+
     setActiveBranch(branchName)
     setSelectedNode(null)
     setActiveSession(null)
