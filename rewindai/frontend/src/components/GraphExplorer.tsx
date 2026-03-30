@@ -13,12 +13,15 @@ import {
 } from '../utils/cytoscape'
 
 let layoutRegistered = false
+let layoutName: 'cose-bilkent' | 'cose' = 'cose'
 if (!layoutRegistered) {
   try {
     cytoscape.use(coseBilkent)
     layoutRegistered = true
+    layoutName = 'cose-bilkent'
   } catch {
     layoutRegistered = true
+    layoutName = 'cose'
   }
 }
 
@@ -99,7 +102,7 @@ export default function GraphExplorer({ branchName, sessionId, onNodeSelect }: P
       elements: toCytoscapeElements(filteredGraph),
       style: cytoscapeStyle,
       layout: {
-        name: 'cose-bilkent',
+        name: layoutName,
         fit: true,
         padding: 50,
         animate: false,

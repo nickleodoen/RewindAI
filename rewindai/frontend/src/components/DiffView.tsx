@@ -77,6 +77,15 @@ export default function DiffView() {
   }, [])
 
   useEffect(() => {
+    if (branchA && branchA === branchB) {
+      const fallbackBranch = branches.find(name => name !== branchA) ?? ''
+      if (fallbackBranch) {
+        setBranchB(fallbackBranch)
+      }
+    }
+  }, [branchA, branchB, branches])
+
+  useEffect(() => {
     let cancelled = false
 
     const loadDiff = async () => {
@@ -139,7 +148,7 @@ export default function DiffView() {
             onChange={event => setBranchB(event.target.value)}
             className="rounded-xl border border-border bg-surface px-3 py-2 text-sm text-slate-100 outline-none"
           >
-            {(branches ?? []).map(branch => (
+            {(branches ?? []).filter(branch => branch !== branchA || branches.length === 1).map(branch => (
               <option key={branch} value={branch}>
                 {branch}
               </option>
