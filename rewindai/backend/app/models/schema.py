@@ -2,7 +2,6 @@
 
 from __future__ import annotations
 
-from datetime import datetime
 from typing import Literal
 
 from pydantic import BaseModel, Field
@@ -67,12 +66,12 @@ class SessionResponse(BaseModel):
     id: str
     branch_name: str
     user_id: str
-    created_at: datetime | None = None
+    created_at: str | None = None
 
 
 class BranchResponse(BaseModel):
     name: str
-    created_at: datetime | None = None
+    created_at: str | None = None
     created_by: str | None = None
 
 
@@ -81,7 +80,7 @@ class CommitResponse(BaseModel):
     message: str
     branch_name: str
     user_id: str | None = None
-    created_at: datetime | None = None
+    created_at: str | None = None
 
 
 class MemoryResponse(BaseModel):
@@ -91,14 +90,14 @@ class MemoryResponse(BaseModel):
     branch_name: str
     tags: list[str] = Field(default_factory=list)
     user_id: str | None = None
-    created_at: datetime | None = None
+    created_at: str | None = None
 
 
 class MessageResponse(BaseModel):
     id: str
     role: str
     content: str
-    created_at: datetime | None = None
+    created_at: str | None = None
 
 
 class DiffResponse(BaseModel):

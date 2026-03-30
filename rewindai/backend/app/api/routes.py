@@ -2,6 +2,7 @@
 
 import logging
 import uuid
+from datetime import datetime
 
 from fastapi import APIRouter, HTTPException
 
@@ -39,6 +40,20 @@ from app.models.schema import (
 
 logger = logging.getLogger(__name__)
 router = APIRouter(prefix="/api/v1")
+
+
+def neo4j_datetime_to_iso(val) -> str | None:
+    """Convert Neo4j DateTime to ISO string, or return None."""
+    if val is None:
+        return None
+    if isinstance(val, datetime):
+        return val.isoformat()
+    # neo4j.time.DateTime has .isoformat() or .to_native()
+    if hasattr(val, "to_native"):
+        return val.to_native().isoformat()
+    if hasattr(val, "isoformat"):
+        return val.isoformat()
+    return str(val)
 
 
 # ── Chat ──────────────────────────────────────────────────────────────────────
@@ -91,7 +106,7 @@ async def create_session(req: CreateSessionRequest):
             id=s["id"],
             branch_name=s["branchName"],
             user_id=s["userId"],
-            created_at=s.get("createdAt"),
+            created_at=neo4j_datetime_to_iso(s.get("createdAt")),
         )
 
 
@@ -106,7 +121,7 @@ async def list_sessions():
                 id=r["s"]["id"],
                 branch_name=r["s"]["branchName"],
                 user_id=r["s"]["userId"],
-                created_at=r["s"].get("createdAt"),
+                created_at=neo4j_datetime_to_iso(r["s"].get("createdAt")),
             )
             for r in records
         ]
@@ -123,7 +138,7 @@ async def get_session_messages(session_id: str):
                 id=r["ct"]["id"],
                 role=r["ct"]["role"],
                 content=r["ct"]["content"],
-                created_at=r["ct"].get("createdAt"),
+                created_at=neo4j_datetime_to_iso(r["ct"].get("createdAt")),
             )
             for r in records
         ]
@@ -188,7 +203,7 @@ async def list_memories(branch_name: str = "main"):
                 branch_name=r["m"].get("branchName", branch_name),
                 tags=r["m"].get("tags", []),
                 user_id=r["m"].get("userId"),
-                created_at=r["m"].get("createdAt"),
+                created_at=neo4j_datetime_to_iso(r["m"].get("createdAt")),
             )
             for r in records
         ]
@@ -234,7 +249,7 @@ async def create_memory(req: CreateMemoryRequest):
             branch_name=m.get("branchName", req.branch_name),
             tags=m.get("tags", []),
             user_id=m.get("userId"),
-            created_at=m.get("createdAt"),
+            created_at=neo4j_datetime_to_iso(m.get("createdAt")),
         )
 
 

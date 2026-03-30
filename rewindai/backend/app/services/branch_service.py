@@ -2,6 +2,7 @@
 
 import logging
 import uuid
+from datetime import datetime
 
 from neo4j import AsyncDriver
 
@@ -9,6 +10,19 @@ from app.graph import queries
 from app.chat.context_builder import build_context_for_checkout
 
 logger = logging.getLogger(__name__)
+
+
+def _dt(val) -> str | None:
+    """Convert Neo4j DateTime to ISO string."""
+    if val is None:
+        return None
+    if isinstance(val, datetime):
+        return val.isoformat()
+    if hasattr(val, "to_native"):
+        return val.to_native().isoformat()
+    if hasattr(val, "isoformat"):
+        return val.isoformat()
+    return str(val)
 
 
 async def create_branch(
@@ -34,7 +48,7 @@ async def create_branch(
             )
         record = await result.single()
         b = record["b"]
-        return {"name": b["name"], "created_at": b.get("createdAt"), "created_by": b.get("createdBy")}
+        return {"name": b["name"], "created_at": _dt(b.get("createdAt")), "created_by": b.get("createdBy")}
 
 
 async def list_branches(driver: AsyncDriver) -> list[dict]:
@@ -42,7 +56,7 @@ async def list_branches(driver: AsyncDriver) -> list[dict]:
         result = await session.run(queries.LIST_BRANCHES)
         records = await result.data()
         return [
-            {"name": r["b"]["name"], "created_at": r["b"].get("createdAt"), "created_by": r["b"].get("createdBy")}
+            {"name": r["b"]["name"], "created_at": _dt(r["b"].get("createdAt")), "created_by": r["b"].get("createdBy")}
             for r in records
         ]
 
@@ -70,7 +84,7 @@ async def create_commit(
             "message": c["message"],
             "branch_name": c["branchName"],
             "user_id": c.get("userId"),
-            "created_at": c.get("createdAt"),
+            "created_at": _dt(c.get("createdAt")),
         }
 
 
@@ -84,7 +98,7 @@ async def list_commits(driver: AsyncDriver, branch_name: str) -> list[dict]:
                 "message": r["c"]["message"],
                 "branch_name": r["c"]["branchName"],
                 "user_id": r["c"].get("userId"),
-                "created_at": r["c"].get("createdAt"),
+                "created_at": _dt(r["c"].get("createdAt")),
             }
             for r in records
         ]
@@ -192,7 +206,7 @@ async def get_timeline(driver: AsyncDriver, branch_name: str) -> list[dict]:
                     "message": c["message"],
                     "branch_name": c["branchName"],
                     "user_id": c.get("userId"),
-                    "created_at": c.get("createdAt"),
+                    "created_at": _dt(c.get("createdAt")),
                 },
                 "parent_id": parent["id"] if parent else None,
             })
