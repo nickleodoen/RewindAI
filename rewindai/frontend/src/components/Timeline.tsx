@@ -8,41 +8,102 @@ interface Props {
   onCheckout: (commitId: string, commitMessage: string) => void
 }
 
-export default function Timeline({ branchName, refreshKey, onCheckout }: Props) {
-  const [entries, setEntries] = useState<TimelineEntry[]>([])
-  const api = useApi()
-
-  useEffect(() => {
-    api.getTimeline(branchName).then(e => {
-      setEntries(e)
-    })
-  }, [branchName, refreshKey])
-
-  if (entries.length === 0) {
-    return <div className="p-4 text-xs text-zinc-600">No timeline data</div>
+function formatTimestamp(value?: string) {
+  if (!value) {
+    return 'Unknown time'
   }
 
+  return new Date(value).toLocaleString()
+}
+
+export default function Timeline({ branchName, refreshKey, onCheckout }: Props) {
+  const api = useApi()
+  const [entries, setEntries] = useState<TimelineEntry[]>([])
+  const [loading, setLoading] = useState(false)
+  const [error, setError] = useState<string | null>(null)
+
+  useEffect(() => {
+    let cancelled = false
+
+    const loadTimeline = async () => {
+      setLoading(true)
+      setError(null)
+
+      try {
+        const timeline = await api.getTimeline(branchName)
+        if (!cancelled) {
+          setEntries(timeline ?? [])
+        }
+      } catch (loadError) {
+        if (!cancelled) {
+          setEntries([])
+          setError(loadError instanceof Error ? loadError.message : 'Failed to load timeline.')
+        }
+      } finally {
+        if (!cancelled) {
+          setLoading(false)
+        }
+      }
+    }
+
+    void loadTimeline()
+
+    return () => {
+      cancelled = true
+    }
+  }, [branchName, refreshKey])
+
   return (
-    <div className="p-4 space-y-0">
-      {entries.map((entry, i) => (
-        <div key={entry.commit.id} className="flex items-start gap-3">
-          <div className="flex flex-col items-center">
-            <div
-              className="w-4 h-4 rounded-full border-2 border-emerald-500 bg-emerald-500/20 cursor-pointer hover:bg-emerald-500/40"
-              onClick={() => onCheckout(entry.commit.id, entry.commit.message)}
-              title={`Checkout ${entry.commit.id.slice(0, 8)}`}
-            />
-            {i < entries.length - 1 && <div className="w-0.5 h-8 bg-zinc-700" />}
-          </div>
-          <div className="pb-4">
-            <div className="text-xs text-zinc-300">{entry.commit.message || 'Unnamed'}</div>
-            <div className="text-[10px] text-zinc-600">
-              {entry.commit.id.slice(0, 8)} · {entry.commit.user_id}
-              {entry.parent_id && ` → ${entry.parent_id.slice(0, 8)}`}
-            </div>
-          </div>
+    <div className="flex h-full flex-col">
+      <div className="border-b border-border px-4 py-4">
+        <div className="text-xs uppercase tracking-[0.16em] text-slate-500">Timeline</div>
+        <div className="mt-1 text-sm text-slate-300">
+          Commit history for <span className="font-mono text-emerald-400">{branchName}</span>
         </div>
-      ))}
+      </div>
+
+      <div className="flex-1 overflow-y-auto px-4 py-4">
+        {loading && (
+          <div className="text-sm text-slate-500 animate-pulse">Loading timeline...</div>
+        )}
+
+        {error && (
+          <div className="rounded-xl border border-red-500/30 bg-red-500/10 px-4 py-3 text-sm text-red-200">
+            Failed to load timeline. Check backend connection.
+            <div className="mt-1 text-xs text-red-300/80">{error}</div>
+          </div>
+        )}
+
+        {!loading && entries.length === 0 && !error && (
+          <div className="rounded-xl border border-dashed border-border px-4 py-6 text-sm text-slate-500">
+            No commit history on this branch yet.
+          </div>
+        )}
+
+        <div className="space-y-0">
+          {(entries ?? []).map((entry, index) => (
+            <div key={entry.commit.id} className="flex gap-3">
+              <div className="flex w-6 flex-col items-center">
+                <button
+                  onClick={() => onCheckout(entry.commit.id, entry.commit.message)}
+                  className="h-4 w-4 rounded-full border-2 border-emerald-400 bg-emerald-500/20 transition hover:bg-emerald-500/40"
+                  title={`Checkout ${entry.commit.message}`}
+                />
+                {index < entries.length - 1 && <div className="mt-1 h-full w-px bg-slate-700" />}
+              </div>
+
+              <div className="pb-5">
+                <div className="text-sm text-slate-100">{entry.commit.message || 'Untitled commit'}</div>
+                <div className="mt-1 text-xs text-slate-500">{formatTimestamp(entry.commit.created_at)}</div>
+                <div className="mt-1 text-[11px] text-slate-600">
+                  {entry.commit.id.slice(0, 8)}
+                  {entry.parent_id ? ` → ${entry.parent_id.slice(0, 8)}` : ' • root commit'}
+                </div>
+              </div>
+            </div>
+          ))}
+        </div>
+      </div>
     </div>
   )
 }
