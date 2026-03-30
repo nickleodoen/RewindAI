@@ -67,6 +67,43 @@ async def extract_via_claude_fallback(conversation_text: str) -> list[dict]:
         return []
 
 
+def extract_local_fallback(conversation_text: str) -> list[dict]:
+    """Simple keyword-based extraction when no API is available."""
+    import re
+    memories = []
+    lines = conversation_text.split("\n")
+    for line in lines:
+        content = line.split(":", 1)[-1].strip() if ":" in line else line.strip()
+        if not content or len(content) < 10:
+            continue
+        # Detect type from keywords
+        lower = content.lower()
+        if any(kw in lower for kw in ["decided", "chose", "chosen", "decision", "we will use", "going with"]):
+            mem_type = "decision"
+        elif any(kw in lower for kw in ["action item", "todo", "need to", "must", "should", "set up", "implement"]):
+            mem_type = "action_item"
+        elif any(kw in lower for kw in ["question", "should we", "what if", "how do", "?"]):
+            mem_type = "question"
+        else:
+            mem_type = "fact"
+        # Extract simple tags from content
+        tags = re.findall(r'\b(?:PostgreSQL|Redis|JWT|API|GraphQL|REST|React|Python|FastAPI|Neo4j|Docker)\b', content, re.IGNORECASE)
+        tags = list(set(t.lower() for t in tags))
+        memories.append({
+            "id": str(uuid.uuid4()),
+            "type": mem_type,
+            "content": content[:200],
+            "tags": tags,
+            "depends_on": [],
+            "supersedes": [],
+        })
+    return memories[:10]  # Cap at 10
+
+
 async def extract_memories(conversation_text: str) -> list[dict]:
-    """Extract memories from conversation text. Tries RocketRide, falls back to Claude."""
-    return await extract_via_rocketride(conversation_text)
+    """Extract memories from conversation text. Tries RocketRide → Claude → local."""
+    memories = await extract_via_rocketride(conversation_text)
+    if not memories:
+        logger.info("All API extractors failed, using local keyword extraction")
+        memories = extract_local_fallback(conversation_text)
+    return memories
