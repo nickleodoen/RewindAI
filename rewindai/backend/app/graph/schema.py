@@ -12,6 +12,7 @@ CONSTRAINTS = [
     "CREATE CONSTRAINT branch_name IF NOT EXISTS FOR (b:Branch) REQUIRE b.name IS UNIQUE",
     "CREATE CONSTRAINT session_id IF NOT EXISTS FOR (s:Session) REQUIRE s.id IS UNIQUE",
     "CREATE CONSTRAINT user_id IF NOT EXISTS FOR (u:User) REQUIRE u.id IS UNIQUE",
+    "CREATE CONSTRAINT workspace_user_id IF NOT EXISTS FOR (w:Workspace) REQUIRE w.userId IS UNIQUE",
     "CREATE CONSTRAINT compaction_snapshot_id IF NOT EXISTS FOR (cs:CompactionSnapshot) REQUIRE cs.id IS UNIQUE",
     "CREATE CONSTRAINT conversation_turn_id IF NOT EXISTS FOR (ct:ConversationTurn) REQUIRE ct.id IS UNIQUE",
 ]

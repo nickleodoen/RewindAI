@@ -1,6 +1,7 @@
 """Chat orchestrator — Claude API with compaction interception."""
 
 import logging
+import re
 import uuid
 
 import anthropic
@@ -9,8 +10,41 @@ from app.config import settings
 from app.graph.neo4j_client import get_driver
 from app.graph import queries
 from app.compaction.interceptor import handle_compaction_event
+from app.services.workspace_service import get_branch_info, get_memories_at_commit
 
 logger = logging.getLogger(__name__)
+
+STOP_WORDS = {
+    "about",
+    "after",
+    "again",
+    "been",
+    "from",
+    "have",
+    "that",
+    "their",
+    "there",
+    "they",
+    "this",
+    "what",
+    "when",
+    "where",
+    "which",
+    "with",
+    "would",
+    "your",
+    "into",
+    "than",
+    "them",
+    "then",
+    "were",
+    "will",
+    "just",
+    "some",
+    "made",
+}
+
+TOKEN_PATTERN = re.compile(r"[A-Za-z0-9+#./-]+")
 
 
 def _make_claude_request(client: anthropic.Anthropic, messages: list[dict]):
@@ -31,10 +65,114 @@ def _make_claude_request(client: anthropic.Anthropic, messages: list[dict]):
     )
 
 
+def _tokenize(text: str) -> list[str]:
+    tokens = {
+        token.lower().strip("._-/")
+        for token in TOKEN_PATTERN.findall(text)
+        if len(token.strip("._-/")) > 2
+    }
+    return sorted(token for token in tokens if token not in STOP_WORDS)
+
+
+def _score_memory(memory: dict, tokens: list[str]) -> int:
+    haystack = f"{memory.get('type', '')} {memory.get('content', '')} {' '.join(memory.get('tags', []))}".lower()
+    score = 0
+
+    for token in tokens:
+        if token in memory.get("type", "").lower():
+            score += 4
+        if any(token in tag.lower() for tag in memory.get("tags", [])):
+            score += 5
+        if token in haystack:
+            score += 2
+
+    if "decision" in tokens and memory.get("type") == "decision":
+        score += 4
+    if "fact" in tokens and memory.get("type") == "fact":
+        score += 3
+    if {"action", "todo"} & set(tokens) and memory.get("type") == "action_item":
+        score += 3
+    if {"question", "open"} & set(tokens) and memory.get("type") == "question":
+        score += 3
+
+    return score
+
+
+def _format_type_label(value: str) -> str:
+    return value.replace("_", " ").title()
+
+
+def _build_fallback_response(prompt: str, memories: list[dict], branch_name: str, *, response_mode: str) -> tuple[str, str | None]:
+    tokens = _tokenize(prompt)
+    ranked = sorted(
+        (
+            {
+                "memory": memory,
+                "score": _score_memory(memory, tokens),
+            }
+            for memory in memories
+        ),
+        key=lambda item: (item["score"], item["memory"].get("created_at") or ""),
+        reverse=True,
+    )
+
+    selected = [entry["memory"] for entry in ranked if entry["score"] > 0][:5]
+    if not selected:
+        by_recency = sorted(memories, key=lambda memory: memory.get("created_at") or "", reverse=True)
+        selected = [memory for memory in by_recency if memory.get("type") == "decision"][:3]
+        extra = next(
+            (memory for memory in by_recency if memory.get("type") in {"action_item", "question"}),
+            None,
+        )
+        if extra and extra not in selected:
+            selected.append(extra)
+
+    if selected:
+        lines = []
+        for memory in selected:
+            tags = f" [{', '.join(memory.get('tags', []))}]" if memory.get("tags") else ""
+            lines.append(f"- {_format_type_label(memory.get('type', 'fact'))}: {memory.get('content', '')}{tags}")
+        response = f"Memory-grounded demo reply from {branch_name}.\n\n" + "\n".join(lines)
+    else:
+        response = f"Memory-grounded demo reply from {branch_name}.\n\n- No stored memories match that question yet on this branch."
+
+    if response_mode == "mock":
+        notice = "Live AI is not configured. Showing a memory-grounded demo fallback."
+    else:
+        notice = "Live AI is temporarily unavailable. Showing a memory-grounded demo fallback."
+
+    return response, notice
+
+
+async def _resolve_fallback_memories(
+    driver,
+    *,
+    session_node,
+    session_branch_name: str,
+    user_id: str,
+) -> tuple[list[dict], str]:
+    origin_commit_id = session_node.get("originCommitId")
+    origin_branch = session_node.get("originBranch") or session_branch_name
+    commit_id = origin_commit_id
+
+    if not commit_id and session_branch_name:
+        branch = await get_branch_info(driver, session_branch_name)
+        if branch:
+            commit_id = branch.get("head_commit_id")
+            origin_branch = branch.get("name") or origin_branch
+
+    memories = await get_memories_at_commit(driver, commit_id)
+    if not memories:
+        status_branch = await get_branch_info(driver, origin_branch) if origin_branch else None
+        if status_branch and status_branch.get("head_commit_id") and status_branch.get("head_commit_id") != commit_id:
+            memories = await get_memories_at_commit(driver, status_branch.get("head_commit_id"))
+
+    return memories, origin_branch or session_branch_name or user_id
+
+
 async def chat(
     session_id: str,
     user_message: str,
-    branch_name: str = "main",
     user_id: str = "default",
 ) -> dict:
     """Send a message in a session, handling compaction if it occurs.
@@ -43,7 +181,20 @@ async def chat(
     """
     driver = await get_driver()
 
-    # 1. Store user turn
+    # 1. Resolve session context
+    session_branch_name = "main"
+    checkout_mode = "attached"
+    session_node = None
+    async with driver.session() as session:
+        result = await session.run(queries.GET_SESSION, sessionId=session_id)
+        record = await result.single()
+        if not record:
+            raise ValueError(f"Session '{session_id}' not found")
+        session_node = record["s"]
+        session_branch_name = session_node.get("branchName", "main")
+        checkout_mode = session_node.get("checkoutMode", "attached")
+
+    # 2. Store user turn
     turn_id = str(uuid.uuid4())
     async with driver.session() as session:
         await session.run(
@@ -52,10 +203,10 @@ async def chat(
             sessionId=session_id,
             role="user",
             content=user_message,
-            branchName=branch_name,
+            branchName=session_branch_name,
         )
 
-    # 2. Load session history for Claude API
+    # 3. Load session history for Claude API
     messages = []
     async with driver.session() as session:
         result = await session.run(queries.GET_SESSION_TURNS, sessionId=session_id)
@@ -67,21 +218,22 @@ async def chat(
                 "content": ct["content"],
             })
 
-    # 3. Call Claude API with compaction enabled
+    # 4. Call Claude API with compaction enabled
     compaction_occurred = False
     memories_extracted = 0
     assistant_text = ""
+    response_mode = "live"
+    notice = None
 
     if not settings.anthropic_api_key or settings.anthropic_api_key == "your_key_here":
-        # Mock mode — no API key configured
-        assistant_text = f"[Mock] I received your message: '{user_message[:100]}'. Claude API is not configured — set ANTHROPIC_API_KEY in .env to enable real responses."
+        response_mode = "mock"
         logger.warning("Chat in mock mode — no ANTHROPIC_API_KEY configured")
     else:
         try:
             client = anthropic.Anthropic(api_key=settings.anthropic_api_key)
             response = _make_claude_request(client, messages)
 
-            # 4. Handle compaction if it occurred
+            # 5. Handle compaction if it occurred
             if response.stop_reason == "compaction":
                 compaction_occurred = True
                 compaction_block = response.content[0]
@@ -92,11 +244,12 @@ async def chat(
                 memories_extracted = await handle_compaction_event(
                     driver=driver,
                     session_id=session_id,
-                    branch_name=branch_name,
+                    branch_name=session_branch_name,
                     user_id=user_id,
                     compaction_content=compaction_content,
                     pre_compaction_messages=pre_compaction_messages,
                     token_count=response.usage.input_tokens if response.usage else 0,
+                    persist_memories=checkout_mode != "detached",
                 )
 
                 # Continue session with compacted context
@@ -110,15 +263,29 @@ async def chat(
 
         except anthropic.BadRequestError as e:
             logger.error("Claude API error: %s", e)
-            assistant_text = f"[API Error] {e.message if hasattr(e, 'message') else str(e)}"
+            response_mode = "fallback"
         except anthropic.AuthenticationError as e:
             logger.error("Claude API auth error: %s", e)
-            assistant_text = "[API Error] Authentication failed. Check your ANTHROPIC_API_KEY."
+            response_mode = "fallback"
         except Exception as e:
             logger.error("Claude API unexpected error: %s", e)
-            assistant_text = f"[API Error] {str(e)}"
+            response_mode = "fallback"
 
-    # 5. Store assistant turn
+    if response_mode != "live":
+        fallback_memories, fallback_branch = await _resolve_fallback_memories(
+            driver,
+            session_node=session_node,
+            session_branch_name=session_branch_name,
+            user_id=user_id,
+        )
+        assistant_text, notice = _build_fallback_response(
+            user_message,
+            fallback_memories,
+            fallback_branch,
+            response_mode=response_mode,
+        )
+
+    # 6. Store assistant turn
     assistant_turn_id = str(uuid.uuid4())
     async with driver.session() as session:
         await session.run(
@@ -127,11 +294,13 @@ async def chat(
             sessionId=session_id,
             role="assistant",
             content=assistant_text,
-            branchName=branch_name,
+            branchName=session_branch_name,
         )
 
     return {
         "response": assistant_text,
         "compaction_occurred": compaction_occurred,
         "memories_extracted": memories_extracted,
+        "response_mode": response_mode,
+        "notice": notice,
     }

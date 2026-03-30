@@ -1,0 +1,2 @@
+"""RewindAI CLI package."""
+

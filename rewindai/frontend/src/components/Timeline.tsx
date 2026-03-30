@@ -93,11 +93,22 @@ export default function Timeline({ branchName, refreshKey, onCheckout }: Props) 
               </div>
 
               <div className="pb-5">
-                <div className="text-sm text-slate-100">{entry.commit.message || 'Untitled commit'}</div>
+                <div className="flex items-center gap-2 text-sm text-slate-100">
+                  <span>{entry.commit.message || 'Untitled commit'}</span>
+                  {entry.commit.is_merge && (
+                    <span className="rounded-full bg-emerald-500/15 px-2 py-0.5 text-[10px] uppercase tracking-[0.12em] text-emerald-300">
+                      merge
+                    </span>
+                  )}
+                </div>
                 <div className="mt-1 text-xs text-slate-500">{formatTimestamp(entry.commit.created_at)}</div>
                 <div className="mt-1 text-[11px] text-slate-600">
                   {entry.commit.id.slice(0, 8)}
-                  {entry.parent_id ? ` → ${entry.parent_id.slice(0, 8)}` : ' • root commit'}
+                  {entry.commit.parent_ids && entry.commit.parent_ids.length > 1
+                    ? ` ⇢ ${entry.commit.parent_ids.map(parentId => parentId.slice(0, 8)).join(', ')}`
+                    : entry.parent_id
+                      ? ` → ${entry.parent_id.slice(0, 8)}`
+                      : ' • root commit'}
                 </div>
               </div>
             </div>

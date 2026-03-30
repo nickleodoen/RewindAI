@@ -158,7 +158,24 @@ export default function ChatPanel({ sessionId, branchName, onCommit }: Props) {
       const response = await api.sendMessage(sessionId, text, 'demo')
       const additions: ChatItem[] = []
 
-      if (isUnavailableAssistantText(response.response)) {
+      if (response.notice) {
+        additions.push({
+          id: `notice-${Date.now()}`,
+          role: 'system',
+          content: response.notice,
+          tone: response.response_mode === 'live' ? 'default' : 'warning',
+        })
+      }
+
+      if (response.response_mode !== 'live') {
+        additions.push({
+          id: `assistant-${Date.now()}`,
+          role: 'assistant',
+          content: response.response,
+          created_at: new Date().toISOString(),
+          tone: 'default',
+        })
+      } else if (isUnavailableAssistantText(response.response)) {
         const memories = await api.listMemories(branchName)
         const fallback = buildDemoFallbackReply(text, memories, branchName)
         additions.push({

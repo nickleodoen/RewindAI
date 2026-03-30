@@ -19,6 +19,7 @@ async def handle_compaction_event(
     compaction_content: str,
     pre_compaction_messages: list[dict],
     token_count: int = 0,
+    persist_memories: bool = True,
 ) -> int:
     """Process a compaction event: store snapshot + extract memories.
 
@@ -52,6 +53,10 @@ async def handle_compaction_event(
     # 3. Extract memories via pipeline
     extracted = await extract_memories(conversation_text)
     logger.info("Extracted %d memories from compaction event", len(extracted))
+
+    if not persist_memories:
+        logger.info("Skipping memory persistence for session %s because workspace is detached", session_id)
+        return 0
 
     # 4. Store extracted memories in Neo4j
     async with driver.session() as session:

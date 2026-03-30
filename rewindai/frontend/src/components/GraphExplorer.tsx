@@ -28,6 +28,9 @@ if (!layoutRegistered) {
 interface Props {
   branchName: string
   sessionId: string | null
+  workspaceMode: 'attached' | 'detached' | 'uninitialized'
+  headCommitId: string | null
+  headIsMerge: boolean
   onNodeSelect: (node: Record<string, unknown> | null) => void
 }
 
@@ -35,7 +38,14 @@ function clearHighlight(cy: cytoscape.Core) {
   cy.elements().removeClass('faded highlighted')
 }
 
-export default function GraphExplorer({ branchName, sessionId, onNodeSelect }: Props) {
+export default function GraphExplorer({
+  branchName,
+  sessionId,
+  workspaceMode,
+  headCommitId,
+  headIsMerge,
+  onNodeSelect,
+}: Props) {
   const api = useApi()
   const containerRef = useRef<HTMLDivElement>(null)
   const cyRef = useRef<cytoscape.Core | null>(null)
@@ -151,7 +161,10 @@ export default function GraphExplorer({ branchName, sessionId, onNodeSelect }: P
           <div className="text-xs uppercase tracking-[0.16em] text-slate-500">Memory Graph</div>
           <div className="mt-1 text-sm text-slate-300">
             <span className="font-mono text-emerald-400">{branchName}</span>
+            <span className="ml-3 text-slate-500">Mode {workspaceMode}</span>
+            <span className="ml-3 text-slate-500">HEAD {headCommitId ? headCommitId.slice(0, 8) : 'none'}</span>
             <span className="ml-3 text-slate-500">Session {sessionId ? sessionId.slice(0, 8) : 'starting'}</span>
+            {headIsMerge && <span className="ml-3 rounded-full bg-emerald-500/15 px-2 py-1 text-[11px] text-emerald-300">merge commit visible</span>}
           </div>
         </div>
 

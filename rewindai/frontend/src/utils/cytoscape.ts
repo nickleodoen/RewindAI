@@ -48,6 +48,9 @@ function getDisplayLabel(node: GraphNode) {
   }
 
   if (node.label === 'Commit') {
+    if (isMergeCommit(node)) {
+      return truncate(String(properties.message ?? `Merge ${properties.mergedFromBranch ?? 'branch'}`), 40)
+    }
     return truncate(String(properties.message ?? properties.id ?? node.id), 36)
   }
 
@@ -56,6 +59,12 @@ function getDisplayLabel(node: GraphNode) {
   }
 
   return truncate(String(properties.name ?? properties.id ?? node.id), 24)
+}
+
+function isMergeCommit(node: GraphNode) {
+  const properties = node.properties ?? {}
+  const parentIds = Array.isArray(properties.parentIds) ? properties.parentIds : []
+  return Boolean(properties.isMerge) || parentIds.length > 1
 }
 
 function getVisualType(node: GraphNode) {
@@ -81,12 +90,15 @@ export function toCytoscapeElements(data: GraphData): cytoscape.ElementDefinitio
     ...filtered.nodes.map(node => {
       const visualType = getVisualType(node)
       const color = NODE_COLORS[visualType] ?? '#64748b'
+      const mergeCommit = isMergeCommit(node)
       const shape = node.label === 'Branch'
         ? 'hexagon'
         : node.label === 'Commit'
-          ? 'round-rectangle'
+          ? mergeCommit
+            ? 'diamond'
+            : 'round-rectangle'
           : 'ellipse'
-      const size = node.label === 'Branch' ? 62 : node.label === 'Commit' ? 48 : 36
+      const size = node.label === 'Branch' ? 62 : node.label === 'Commit' ? (mergeCommit ? 58 : 50) : 36
 
       return {
         data: {
@@ -99,7 +111,11 @@ export function toCytoscapeElements(data: GraphData): cytoscape.ElementDefinitio
           shape,
           ...node.properties,
         },
-        classes: node.label === 'Memory' ? `memory ${visualType}` : node.label,
+        classes: node.label === 'Memory'
+          ? `memory ${visualType}`
+          : mergeCommit
+            ? `${node.label} merge-commit`
+            : node.label,
       }
     }),
     ...filtered.edges.map((edge, index) => ({
@@ -172,6 +188,15 @@ export const cytoscapeStyle: Array<{ selector: string; style: Record<string, unk
       'border-color': '#ffffff',
       width: 'mapData(size, 30, 70, 40, 74)',
       height: 'mapData(size, 30, 70, 40, 74)',
+    },
+  },
+  {
+    selector: '.merge-commit',
+    style: {
+      'border-width': 3,
+      'border-color': '#f8fafc',
+      'background-color': '#22c55e',
+      'font-weight': 700,
     },
   },
   {

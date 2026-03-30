@@ -1,0 +1,31 @@
+Metadata-Version: 2.4
+Name: rewindai-cli
+Version: 0.1.0
+Summary: RewindAI CLI — Git for AI memory
+Requires-Python: >=3.11
+Description-Content-Type: text/markdown
+Requires-Dist: httpx>=0.27.0
+Requires-Dist: typer>=0.12.3
+Requires-Dist: rich>=13.7.1
+
+# RewindAI CLI
+
+`rewind` is the terminal interface for RewindAI, the Git-for-memory workflow built on top of the FastAPI backend.
+
+Install locally:
+
+```bash
+pip install -e ./cli
+```
+
+Example commands:
+
+```bash
+rewind status
+rewind branch list
+rewind checkout main
+rewind log
+rewind diff main graphql-exploration
+rewind chat
+rewind commit -m "Captured API direction changes"
+```

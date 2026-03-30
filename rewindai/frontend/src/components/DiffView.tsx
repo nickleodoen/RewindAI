@@ -1,7 +1,12 @@
 import { useEffect, useState } from 'react'
-import type { DiffResult, Memory } from '../types'
+import type { DiffResult, Memory, MergePreview } from '../types'
 import { useApi } from '../hooks/useApi'
 import { MEMORY_TYPE_COLORS, formatTypeLabel } from '../utils/cytoscape'
+
+interface Props {
+  activeBranch: string
+  workspaceMode: 'attached' | 'detached' | 'uninitialized'
+}
 
 function MemoryCard({ memory }: { memory: Memory }) {
   const badgeColor = MEMORY_TYPE_COLORS[memory.type as keyof typeof MEMORY_TYPE_COLORS] ?? '#64748b'
@@ -26,15 +31,74 @@ function MemoryCard({ memory }: { memory: Memory }) {
   )
 }
 
-export default function DiffView() {
+function MergeSummaryCard({ preview, loading, error }: { preview: MergePreview | null; loading: boolean; error: string | null }) {
+  if (loading) {
+    return (
+      <div className="rounded-2xl border border-border bg-surface/70 px-4 py-4 text-sm text-slate-400 animate-pulse">
+        Loading merge preview...
+      </div>
+    )
+  }
+
+  if (error) {
+    return (
+      <div className="rounded-2xl border border-red-500/30 bg-red-500/10 px-4 py-4 text-sm text-red-200">
+        Unable to load merge preview.
+        <div className="mt-1 text-xs text-red-300/80">{error}</div>
+      </div>
+    )
+  }
+
+  if (!preview) {
+    return null
+  }
+
+  const conflict = preview.conflicts[0]
+  const mergeTitle = `If you merge ${preview.source_branch} into ${preview.target_branch}`
+
+  return (
+    <div className="rounded-2xl border border-emerald-500/20 bg-emerald-500/5 px-4 py-4">
+      <div className="text-xs uppercase tracking-[0.16em] text-emerald-300">Merge Preview</div>
+      <div className="mt-2 text-sm font-medium text-slate-100">{mergeTitle}</div>
+      <div className="mt-3 flex flex-wrap gap-3 text-xs text-slate-300">
+        <span>Mode: {preview.mode}</span>
+        <span>Base: {preview.merge_base_commit_id?.slice(0, 8) ?? 'none'}</span>
+        <span>Conflicts: {preview.conflicts.length}</span>
+        <span>Auto-merged: {preview.auto_merged.length}</span>
+      </div>
+      {conflict && (
+        <div className="mt-3 rounded-xl border border-amber-500/20 bg-amber-500/8 px-3 py-3 text-sm text-amber-100">
+          <div className="text-xs uppercase tracking-[0.12em] text-amber-300">Primary conflict</div>
+          <div className="mt-1">{conflict.reason}</div>
+          <div className="mt-2 text-xs text-amber-50/85">
+            Target: {conflict.memory_a.content}
+          </div>
+          <div className="mt-1 text-xs text-amber-50/85">
+            Source: {conflict.memory_b.content}
+          </div>
+        </div>
+      )}
+      {!conflict && preview.auto_merged[0] && (
+        <div className="mt-3 rounded-xl border border-emerald-500/20 bg-emerald-500/8 px-3 py-3 text-sm text-emerald-100">
+          Auto-merge highlight: {preview.auto_merged[0].content}
+        </div>
+      )}
+    </div>
+  )
+}
+
+export default function DiffView({ activeBranch, workspaceMode }: Props) {
   const api = useApi()
   const [branches, setBranches] = useState<string[]>([])
   const [branchA, setBranchA] = useState('main')
   const [branchB, setBranchB] = useState('graphql-exploration')
   const [diff, setDiff] = useState<DiffResult | null>(null)
+  const [mergePreview, setMergePreview] = useState<MergePreview | null>(null)
   const [loadingBranches, setLoadingBranches] = useState(false)
   const [loadingDiff, setLoadingDiff] = useState(false)
+  const [loadingMergePreview, setLoadingMergePreview] = useState(false)
   const [error, setError] = useState<string | null>(null)
+  const [mergeError, setMergeError] = useState<string | null>(null)
   const [refreshTick, setRefreshTick] = useState(0)
 
   useEffect(() => {
@@ -47,7 +111,7 @@ export default function DiffView() {
       try {
         const fetchedBranches = await api.listBranches()
         const names = (fetchedBranches ?? []).map(branch => branch.name)
-        const defaultA = names.includes('main') ? 'main' : names[0] ?? ''
+        const defaultA = names.includes(activeBranch) ? activeBranch : names.includes('main') ? 'main' : names[0] ?? ''
         const defaultB = names.includes('graphql-exploration')
           ? 'graphql-exploration'
           : names.find(name => name !== defaultA) ?? ''
@@ -74,7 +138,7 @@ export default function DiffView() {
     return () => {
       cancelled = true
     }
-  }, [])
+  }, [activeBranch])
 
   useEffect(() => {
     if (branchA && branchA === branchB) {
@@ -88,33 +152,44 @@ export default function DiffView() {
   useEffect(() => {
     let cancelled = false
 
-    const loadDiff = async () => {
+    const loadViews = async () => {
       if (!branchA || !branchB || branchA === branchB) {
         setDiff(null)
+        setMergePreview(null)
         return
       }
 
       setLoadingDiff(true)
+      setLoadingMergePreview(true)
       setError(null)
+      setMergeError(null)
 
       try {
-        const result = await api.diffBranches(branchA, branchB)
+        const [diffResult, previewResult] = await Promise.all([
+          api.diffBranches(branchA, branchB),
+          api.mergePreview(branchB, branchA),
+        ])
         if (!cancelled) {
-          setDiff(result)
+          setDiff(diffResult)
+          setMergePreview(previewResult)
         }
       } catch (loadError) {
         if (!cancelled) {
           setDiff(null)
-          setError(loadError instanceof Error ? loadError.message : 'Failed to compare branches.')
+          setMergePreview(null)
+          const message = loadError instanceof Error ? loadError.message : 'Failed to compare branches.'
+          setError(message)
+          setMergeError(message)
         }
       } finally {
         if (!cancelled) {
           setLoadingDiff(false)
+          setLoadingMergePreview(false)
         }
       }
     }
 
-    void loadDiff()
+    void loadViews()
 
     return () => {
       cancelled = true
@@ -130,6 +205,9 @@ export default function DiffView() {
     <div className="flex h-full flex-col" style={{ background: '#0b0b12' }}>
       <div className="border-b border-border px-5 py-4">
         <div className="text-xs uppercase tracking-[0.16em] text-slate-500">Branch Diff</div>
+        <div className="mt-1 text-sm text-slate-400">
+          Workspace mode <span className="font-mono text-purple-300">{workspaceMode}</span> • active branch <span className="font-mono text-emerald-400">{activeBranch}</span>
+        </div>
         <div className="mt-3 flex flex-wrap items-center gap-3">
           <select
             value={branchA}
@@ -164,6 +242,10 @@ export default function DiffView() {
       </div>
 
       <div className="flex-1 overflow-y-auto px-5 py-5">
+        <div className="mb-4">
+          <MergeSummaryCard preview={mergePreview} loading={loadingMergePreview} error={mergeError} />
+        </div>
+
         {loadingBranches && (
           <div className="text-sm text-slate-500 animate-pulse">Loading branches...</div>
         )}

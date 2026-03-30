@@ -1,0 +1,2 @@
+[console_scripts]
+rewind = rewindai_cli.main:app

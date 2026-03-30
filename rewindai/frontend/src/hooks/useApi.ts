@@ -1,6 +1,6 @@
 import type {
   Session, Message, ChatResponse, Branch, Commit, Memory,
-  DiffResult, GraphData, TimelineEntry, HealthResponse,
+  DiffResult, GraphData, TimelineEntry, HealthResponse, WorkspaceStatus, MergePreview,
 } from '../types'
 
 const API = '/api/v1'
@@ -56,6 +56,45 @@ export function useApi() {
       method: 'POST',
       body: JSON.stringify({ session_id, message, user_id }),
     })
+
+  // Workspace
+  const getWorkspaceStatus = (user_id = 'demo') =>
+    apiFetch<WorkspaceStatus>(withQuery('/workspace/status', { user_id }))
+
+  const workspaceCheckout = (ref: string, user_id = 'demo', reuse_session = false) =>
+    apiFetch<{
+      mode: 'attached' | 'detached'
+      branch_name?: string | null
+      commit_id?: string | null
+      session_id?: string | null
+      context_messages?: Array<{ role: string; content: string }>
+      memory_count?: number
+      status: WorkspaceStatus
+    }>('/workspace/checkout', {
+      method: 'POST',
+      body: JSON.stringify({ ref, user_id, reuse_session }),
+    })
+
+  const workspaceAttachBranch = (branch_name: string, user_id = 'demo', reuse_session = false) =>
+    apiFetch<{
+      mode: 'attached'
+      branch_name: string
+      commit_id?: string | null
+      session_id?: string | null
+      status: WorkspaceStatus
+    }>('/workspace/attach-branch', {
+      method: 'POST',
+      body: JSON.stringify({ branch_name, user_id, reuse_session }),
+    })
+
+  const workspaceCommit = (message: string, user_id = 'demo') =>
+    apiFetch<Commit & { status: WorkspaceStatus }>('/workspace/commit', {
+      method: 'POST',
+      body: JSON.stringify({ message, user_id }),
+    })
+
+  const mergePreview = (source_branch: string, target_branch?: string, user_id = 'demo') =>
+    apiFetch<MergePreview>(withQuery('/workspace/merge-preview', { source_branch, target_branch, user_id }))
 
   // Branches
   const createBranch = (branch_name: string, source_commit_id?: string, user_id = 'demo') =>
@@ -114,6 +153,7 @@ export function useApi() {
     getHealth,
     createSession, listSessions, getMessages,
     sendMessage,
+    getWorkspaceStatus, workspaceCheckout, workspaceAttachBranch, workspaceCommit, mergePreview,
     createBranch, listBranches, checkoutBranch,
     createCommit, listCommits,
     listMemories,

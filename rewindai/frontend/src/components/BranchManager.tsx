@@ -164,6 +164,11 @@ export default function BranchManager({ activeBranch, onCheckout, onBranchChange
                       <div className="text-xs text-slate-500">
                         {commits.length} commit{commits.length === 1 ? '' : 's'} • created {formatDate(branch.created_at)}
                       </div>
+                      {branch.head_message && (
+                        <div className="mt-1 text-xs text-slate-400">
+                          tip: {truncateMessage(branch.head_message, 58)}
+                        </div>
+                      )}
                     </div>
                   </div>
                   <span className="text-xs text-slate-500">{isExpanded ? 'Hide' : 'Show'}</span>
@@ -187,7 +192,14 @@ export default function BranchManager({ activeBranch, onCheckout, onBranchChange
                       >
                         <div className="flex items-start justify-between gap-3">
                           <div className="min-w-0">
-                            <div className="text-sm text-slate-100">{truncateMessage(commit.message || 'Untitled commit')}</div>
+                            <div className="flex items-center gap-2 text-sm text-slate-100">
+                              <span>{truncateMessage(commit.message || 'Untitled commit')}</span>
+                              {commit.is_merge && (
+                                <span className="rounded-full bg-emerald-500/15 px-2 py-0.5 text-[10px] uppercase tracking-[0.12em] text-emerald-300">
+                                  merge
+                                </span>
+                              )}
+                            </div>
                             <div className="mt-1 text-xs text-slate-500">
                               {formatDate(commit.created_at)} • {commit.id.slice(0, 8)}
                             </div>

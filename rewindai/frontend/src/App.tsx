@@ -1,24 +1,36 @@
-import { useEffect, useState } from 'react'
+import { useEffect, useMemo, useState } from 'react'
 import ChatPanel from './components/ChatPanel'
 import BranchManager from './components/BranchManager'
 import GraphExplorer from './components/GraphExplorer'
 import Timeline from './components/Timeline'
 import DiffView from './components/DiffView'
 import { useApi } from './hooks/useApi'
-import type { HealthResponse } from './types'
+import type { HealthResponse, WorkspaceStatus } from './types'
 
 type Tab = 'chat' | 'graph' | 'diff'
 
+const DEMO_USER = 'demo'
+
+function shortId(value?: string | null) {
+  return value ? value.slice(0, 8) : 'none'
+}
+
 export default function App() {
   const api = useApi()
-  const [activeSession, setActiveSession] = useState<string | null>(null)
-  const [activeBranch, setActiveBranch] = useState('main')
+  const [workspaceStatus, setWorkspaceStatus] = useState<WorkspaceStatus | null>(null)
   const [activeTab, setActiveTab] = useState<Tab>('graph')
   const [selectedNode, setSelectedNode] = useState<Record<string, unknown> | null>(null)
   const [checkoutOverlay, setCheckoutOverlay] = useState({ show: false, message: '' })
   const [branchRefreshKey, setBranchRefreshKey] = useState(0)
   const [healthStatus, setHealthStatus] = useState<HealthResponse | null>(null)
-  const [appMessage, setAppMessage] = useState('')
+  const [appMessage, setAppMessage] = useState('Loading demo workspace...')
+
+  const activeBranch = useMemo(
+    () => workspaceStatus?.branch_name || workspaceStatus?.origin_branch || 'main',
+    [workspaceStatus],
+  )
+  const activeSession = workspaceStatus?.session_id ?? null
+  const workspaceMode = workspaceStatus?.mode ?? 'uninitialized'
 
   useEffect(() => {
     let cancelled = false
@@ -47,22 +59,33 @@ export default function App() {
   useEffect(() => {
     let cancelled = false
 
-    const bootstrapSession = async () => {
+    const bootstrapWorkspace = async () => {
       try {
-        const session = await api.createSession('main', 'demo')
-        if (!cancelled) {
-          setActiveSession(session.id)
+        const status = await api.getWorkspaceStatus(DEMO_USER)
+        if (cancelled) {
+          return
         }
-      } catch {
+
+        if (status.mode === 'uninitialized') {
+          const checkout = await api.workspaceCheckout('main', DEMO_USER)
+          if (!cancelled) {
+            setWorkspaceStatus(checkout.status)
+            setAppMessage("Workspace attached to main for the live demo flow.")
+            setBranchRefreshKey(prev => prev + 1)
+          }
+          return
+        }
+
+        setWorkspaceStatus(status)
+        setAppMessage(status.summary)
+      } catch (error) {
         if (!cancelled) {
-          setAppMessage('Unable to start the demo session.')
+          setAppMessage(error instanceof Error ? error.message : 'Unable to initialize the demo workspace.')
         }
       }
     }
 
-    if (!activeSession) {
-      void bootstrapSession()
-    }
+    void bootstrapWorkspace()
 
     return () => {
       cancelled = true
@@ -70,23 +93,22 @@ export default function App() {
   }, [])
 
   const handleBranchChange = async (branchName: string) => {
-    if (branchName === activeBranch) {
+    if (workspaceMode === 'attached' && branchName === activeBranch) {
       setSelectedNode(null)
       setActiveTab('graph')
       return
     }
 
-    setActiveBranch(branchName)
     setSelectedNode(null)
-    setActiveSession(null)
     setActiveTab('graph')
 
     try {
-      const session = await api.createSession(branchName, 'demo')
-      setActiveSession(session.id)
-      setAppMessage(`Viewing branch ${branchName}`)
+      const result = await api.workspaceAttachBranch(branchName, DEMO_USER)
+      setWorkspaceStatus(result.status)
+      setBranchRefreshKey(prev => prev + 1)
+      setAppMessage(`Attached workspace to ${branchName}.`)
     } catch (error) {
-      setAppMessage(error instanceof Error ? error.message : `Failed to open ${branchName}`)
+      setAppMessage(error instanceof Error ? error.message : `Failed to attach ${branchName}.`)
     }
   }
 
@@ -95,18 +117,15 @@ export default function App() {
     setSelectedNode(null)
 
     try {
-      const data = await api.checkoutBranch(branchName, commitId, 'demo')
-      if (data.session_id) {
-        setActiveSession(data.session_id)
-        setActiveBranch(data.branch_name || branchName)
-        setBranchRefreshKey(prev => prev + 1)
-        setAppMessage(`Checked out ${commitMessage}`)
-        window.setTimeout(() => {
-          setCheckoutOverlay({ show: false, message: '' })
-          setActiveTab('chat')
-        }, 1500)
-        return
-      }
+      const result = await api.workspaceCheckout(commitId, DEMO_USER)
+      setWorkspaceStatus(result.status)
+      setBranchRefreshKey(prev => prev + 1)
+      setAppMessage(`Rewound ${branchName} to ${commitMessage}.`)
+      window.setTimeout(() => {
+        setCheckoutOverlay({ show: false, message: '' })
+        setActiveTab('chat')
+      }, 1500)
+      return
     } catch (error) {
       setAppMessage(error instanceof Error ? error.message : 'Checkout failed')
     }
@@ -120,11 +139,13 @@ export default function App() {
     }
 
     try {
-      await api.createCommit(activeBranch, message, 'demo')
+      const result = await api.workspaceCommit(message, DEMO_USER)
+      setWorkspaceStatus(result.status)
       setBranchRefreshKey(prev => prev + 1)
-      setAppMessage(`Committed "${message}" on ${activeBranch}`)
+      setAppMessage(result.summary || `Committed "${message}" on ${activeBranch}.`)
     } catch (error) {
       setAppMessage(error instanceof Error ? error.message : 'Commit failed')
+      throw error
     }
   }
 
@@ -147,7 +168,7 @@ export default function App() {
         >
           <div style={{ fontSize: '48px' }}>⏪</div>
           <div style={{ fontSize: '24px', fontWeight: 'bold', color: 'white' }}>
-            Rewinding...
+            Rewinding memory state...
           </div>
           <div style={{ fontSize: '16px', color: 'rgba(255,255,255,0.84)' }}>
             {checkoutOverlay.message}
@@ -199,23 +220,33 @@ export default function App() {
           </span>
         </div>
 
-        <div style={{ display: 'flex', alignItems: 'center', gap: '12px', fontSize: '13px', flexWrap: 'wrap', justifyContent: 'flex-end' }}>
-          <span style={{ color: '#64748b' }}>Branch:</span>
-          <span
-            style={{
-              fontFamily: 'monospace',
-              padding: '2px 8px',
-              borderRadius: 4,
-              background: '#1e1e2e',
-              color: '#10b981',
-            }}
-          >
-            {activeBranch}
-          </span>
-          <span style={{ color: '#64748b' }}>
-            Session: {activeSession ? activeSession.slice(0, 8) : 'starting'}
-          </span>
-          {appMessage && <span style={{ color: '#94a3b8' }}>{appMessage}</span>}
+        <div style={{ display: 'flex', flexDirection: 'column', gap: 6, alignItems: 'flex-end' }}>
+          <div style={{ display: 'flex', alignItems: 'center', gap: '8px', fontSize: '12px', flexWrap: 'wrap', justifyContent: 'flex-end' }}>
+            <span style={{ color: '#64748b' }}>Branch</span>
+            <span style={{ fontFamily: 'monospace', padding: '2px 8px', borderRadius: 4, background: '#1e1e2e', color: '#10b981' }}>
+              {activeBranch}
+            </span>
+            <span style={{ color: '#64748b' }}>Mode</span>
+            <span style={{ padding: '2px 8px', borderRadius: 999, background: workspaceMode === 'detached' ? '#7c2d12' : '#1e1e2e', color: workspaceMode === 'detached' ? '#fdba74' : '#cbd5e1' }}>
+              {workspaceMode}
+            </span>
+            <span style={{ color: '#64748b' }}>HEAD</span>
+            <span style={{ fontFamily: 'monospace', padding: '2px 8px', borderRadius: 4, background: '#1e1e2e', color: '#e2e8f0' }}>
+              {shortId(workspaceStatus?.head_commit_id)}
+            </span>
+            {workspaceStatus?.head_is_merge && (
+              <span style={{ padding: '2px 8px', borderRadius: 999, background: '#052e16', color: '#86efac' }}>
+                merge HEAD
+              </span>
+            )}
+            <span style={{ color: '#64748b' }}>Session</span>
+            <span style={{ fontFamily: 'monospace', padding: '2px 8px', borderRadius: 4, background: '#1e1e2e', color: '#cbd5e1' }}>
+              {shortId(activeSession)}
+            </span>
+          </div>
+          <div style={{ fontSize: '12px', color: '#94a3b8', maxWidth: 560, textAlign: 'right' }}>
+            {appMessage || workspaceStatus?.summary || 'Loading demo workspace...'}
+          </div>
         </div>
       </header>
 
@@ -282,13 +313,21 @@ export default function App() {
             )}
             {activeTab === 'graph' && (
               <GraphExplorer
-                key={`${activeBranch}-${branchRefreshKey}`}
+                key={`${activeBranch}-${branchRefreshKey}-${workspaceStatus?.head_commit_id ?? 'none'}`}
                 branchName={activeBranch}
                 sessionId={activeSession}
+                workspaceMode={workspaceMode}
+                headCommitId={workspaceStatus?.head_commit_id ?? null}
+                headIsMerge={workspaceStatus?.head_is_merge ?? false}
                 onNodeSelect={setSelectedNode}
               />
             )}
-            {activeTab === 'diff' && <DiffView />}
+            {activeTab === 'diff' && (
+              <DiffView
+                activeBranch={activeBranch}
+                workspaceMode={workspaceMode}
+              />
+            )}
           </div>
         </main>
       </div>
@@ -306,7 +345,11 @@ export default function App() {
         }}
       >
         <span>Neo4j: {healthStatus?.neo4j ?? 'checking'}</span>
-        <span>{selectedNode ? `Selected: ${String(selectedNode.label || selectedNode.id || 'node')}` : 'Ready for demo'}</span>
+        <span>
+          {selectedNode
+            ? `Selected: ${String(selectedNode.label || selectedNode.id || 'node')}`
+            : workspaceStatus?.summary || 'Ready for demo'}
+        </span>
         <span>RewindAI v0.1.0 — HackwithBay 2.0</span>
       </footer>
     </div>

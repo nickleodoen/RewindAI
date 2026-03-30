@@ -11,6 +11,7 @@ from app.graph.schema import ensure_schema
 from app.graph import queries
 from app.models.schema import HealthResponse
 from app.api.routes import router
+from app.services.workspace_service import repair_workspace_graph
 
 logging.basicConfig(level=logging.INFO, format="%(asctime)s %(name)s %(levelname)s %(message)s")
 logger = logging.getLogger(__name__)
@@ -24,6 +25,7 @@ async def lifespan(app: FastAPI):
         await ensure_schema(driver)
         async with driver.session() as session:
             await session.run(queries.ENSURE_MAIN_BRANCH)
+        await repair_workspace_graph(driver)
         logger.info("RewindAI backend ready (Neo4j connected)")
     except Exception as e:
         logger.warning("Neo4j not available at startup: %s — app will retry on first request", e)

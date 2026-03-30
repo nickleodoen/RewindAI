@@ -1,12 +1,20 @@
 """Rebuilds context from Neo4j for checkout/rewind operations."""
 
 import logging
+import re
 
 from neo4j import AsyncDriver
 
 from app.graph import queries
 
 logger = logging.getLogger(__name__)
+
+TOKEN_PATTERN = re.compile(r"[A-Za-z0-9+#./-]+")
+
+
+def _memory_key(memory: dict) -> tuple[str, str]:
+    normalized = " ".join(token.lower() for token in TOKEN_PATTERN.findall(memory.get("content", "")))
+    return (memory.get("type", "fact"), normalized)
 
 
 async def build_context_for_checkout(driver: AsyncDriver, commit_id: str) -> list[dict]:
@@ -22,14 +30,20 @@ async def build_context_for_checkout(driver: AsyncDriver, commit_id: str) -> lis
     async with driver.session() as session:
         result = await session.run(queries.MEMORIES_AT_COMMIT, commitId=commit_id)
         records = await result.data()
+        seen_keys: set[tuple[str, str]] = set()
         for record in records:
             m = record["m"]
-            memories.append({
+            memory = {
                 "id": m.get("id"),
                 "type": m.get("type"),
                 "content": m.get("content"),
                 "tags": m.get("tags", []),
-            })
+            }
+            key = _memory_key(memory)
+            if key in seen_keys:
+                continue
+            seen_keys.add(key)
+            memories.append(memory)
 
     # Fetch compaction snapshots
     snapshots = []
