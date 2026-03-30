@@ -1,3 +1,5 @@
+export type MemoryType = 'decision' | 'fact' | 'context' | 'action_item' | 'question'
+
 export interface Session {
   id: string
   branch_name: string
@@ -7,7 +9,7 @@ export interface Session {
 
 export interface Message {
   id: string
-  role: 'user' | 'assistant'
+  role: string
   content: string
   created_at?: string
 }
@@ -35,7 +37,7 @@ export interface Commit {
 
 export interface Memory {
   id: string
-  type: 'decision' | 'fact' | 'context' | 'action_item' | 'question'
+  type: MemoryType | string
   content: string
   branch_name: string
   tags: string[]
@@ -53,7 +55,7 @@ export interface DiffResult {
 export interface GraphNode {
   id: string
   label: string
-  type?: string
+  type?: string | null
   properties: Record<string, unknown>
 }
 
@@ -70,5 +72,10 @@ export interface GraphData {
 
 export interface TimelineEntry {
   commit: Commit
-  parent_id?: string
+  parent_id?: string | null
+}
+
+export interface HealthResponse {
+  status: string
+  neo4j: string
 }

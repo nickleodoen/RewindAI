@@ -1,152 +1,308 @@
-import { useState, useEffect } from 'react'
+import { useEffect, useState } from 'react'
 import ChatPanel from './components/ChatPanel'
 import BranchManager from './components/BranchManager'
 import GraphExplorer from './components/GraphExplorer'
 import Timeline from './components/Timeline'
 import DiffView from './components/DiffView'
 import { useApi } from './hooks/useApi'
-import type { Branch } from './types'
+import type { HealthResponse } from './types'
 
 type Tab = 'chat' | 'graph' | 'diff'
 
 export default function App() {
-  const [tab, setTab] = useState<Tab>('chat')
-  const [sessionId, setSessionId] = useState<string | null>(null)
-  const [branchName, setBranchName] = useState('main')
-  const [userId, setUserId] = useState('alice')
-  const [branches, setBranches] = useState<Branch[]>([])
-  const [refreshTrigger, setRefreshTrigger] = useState(0)
-  const [status, setStatus] = useState('')
   const api = useApi()
-
-  const refresh = () => setRefreshTrigger(t => t + 1)
+  const [activeSession, setActiveSession] = useState<string | null>(null)
+  const [activeBranch, setActiveBranch] = useState('main')
+  const [activeTab, setActiveTab] = useState<Tab>('graph')
+  const [selectedNode, setSelectedNode] = useState<Record<string, unknown> | null>(null)
+  const [checkoutOverlay, setCheckoutOverlay] = useState({ show: false, message: '' })
+  const [branchRefreshKey, setBranchRefreshKey] = useState(0)
+  const [healthStatus, setHealthStatus] = useState<HealthResponse | null>(null)
+  const [appMessage, setAppMessage] = useState('')
 
   useEffect(() => {
-    api.listBranches().then(b => {
-      if (b) setBranches(b)
-    })
-  }, [refreshTrigger])
+    let cancelled = false
 
-  const handleNewSession = async () => {
-    const session = await api.createSession(branchName, userId)
-    if (session) {
-      setSessionId(session.id)
-      setStatus(`Session ${session.id.slice(0, 8)} on ${branchName}`)
+    const loadHealth = async () => {
+      try {
+        const health = await api.getHealth()
+        if (!cancelled) {
+          setHealthStatus(health)
+        }
+      } catch (error) {
+        if (!cancelled) {
+          setHealthStatus({ status: 'error', neo4j: 'unreachable' })
+          setAppMessage(error instanceof Error ? error.message : 'Failed to reach backend')
+        }
+      }
+    }
+
+    void loadHealth()
+
+    return () => {
+      cancelled = true
+    }
+  }, [])
+
+  useEffect(() => {
+    let cancelled = false
+
+    const bootstrapSession = async () => {
+      try {
+        const session = await api.createSession('main', 'demo')
+        if (!cancelled) {
+          setActiveSession(session.id)
+        }
+      } catch {
+        if (!cancelled) {
+          setAppMessage('Unable to start the demo session.')
+        }
+      }
+    }
+
+    if (!activeSession) {
+      void bootstrapSession()
+    }
+
+    return () => {
+      cancelled = true
+    }
+  }, [])
+
+  const handleBranchChange = async (branchName: string) => {
+    setActiveBranch(branchName)
+    setSelectedNode(null)
+    setActiveSession(null)
+    setActiveTab('graph')
+
+    try {
+      const session = await api.createSession(branchName, 'demo')
+      setActiveSession(session.id)
+      setAppMessage(`Viewing branch ${branchName}`)
+    } catch (error) {
+      setAppMessage(error instanceof Error ? error.message : `Failed to open ${branchName}`)
     }
   }
 
-  const handleCompaction = (count: number) => {
-    setStatus(`Compaction! ${count} memories extracted`)
-    refresh()
+  const handleCheckout = async (branchName: string, commitId: string, commitMessage: string) => {
+    setCheckoutOverlay({ show: true, message: commitMessage })
+    setSelectedNode(null)
+
+    try {
+      const data = await api.checkoutBranch(branchName, commitId, 'demo')
+      if (data.session_id) {
+        setActiveSession(data.session_id)
+        setActiveBranch(data.branch_name || branchName)
+        setBranchRefreshKey(prev => prev + 1)
+        setAppMessage(`Checked out ${commitMessage}`)
+        window.setTimeout(() => {
+          setCheckoutOverlay({ show: false, message: '' })
+          setActiveTab('chat')
+        }, 1500)
+        return
+      }
+    } catch (error) {
+      setAppMessage(error instanceof Error ? error.message : 'Checkout failed')
+    }
+
+    setCheckoutOverlay({ show: false, message: '' })
   }
 
-  const handleCheckout = async (newSessionId: string, newBranch: string) => {
-    setSessionId(newSessionId)
-    setBranchName(newBranch)
-    setStatus(`Checked out ${newBranch} → session ${newSessionId.slice(0, 8)}`)
-    refresh()
-  }
+  const handleCommit = async (message: string) => {
+    if (!message.trim()) {
+      return
+    }
 
-  const handleCheckoutCommit = async (commitId: string) => {
-    const result = await api.checkoutBranch(branchName, commitId, userId)
-    if (result) {
-      handleCheckout(result.session_id, result.branch_name)
+    try {
+      await api.createCommit(activeBranch, message, 'demo')
+      setBranchRefreshKey(prev => prev + 1)
+      setAppMessage(`Committed "${message}" on ${activeBranch}`)
+    } catch (error) {
+      setAppMessage(error instanceof Error ? error.message : 'Commit failed')
     }
   }
 
   return (
-    <div className="h-screen flex flex-col bg-bg text-zinc-200">
-      {/* Header */}
-      <header className="flex items-center justify-between px-4 py-2 border-b border-border bg-surface/50">
-        <div className="flex items-center gap-3">
-          <h1 className="text-sm font-bold text-accent">RewindAI</h1>
-          <span className="text-[10px] text-zinc-500">git for AI memory</span>
+    <div className="min-h-screen flex flex-col" style={{ background: '#0a0a0f', color: '#e2e8f0' }}>
+      {checkoutOverlay.show && (
+        <div
+          style={{
+            position: 'fixed',
+            inset: 0,
+            zIndex: 50,
+            background: 'rgba(139, 92, 246, 0.85)',
+            display: 'flex',
+            alignItems: 'center',
+            justifyContent: 'center',
+            flexDirection: 'column',
+            gap: '12px',
+            backdropFilter: 'blur(8px)',
+          }}
+        >
+          <div style={{ fontSize: '48px' }}>⏪</div>
+          <div style={{ fontSize: '24px', fontWeight: 'bold', color: 'white' }}>
+            Rewinding...
+          </div>
+          <div style={{ fontSize: '16px', color: 'rgba(255,255,255,0.84)' }}>
+            {checkoutOverlay.message}
+          </div>
         </div>
-        <div className="flex items-center gap-3">
-          <span className="text-[10px] text-zinc-500">
-            Branch: <span className="text-emerald-400">{branchName}</span>
+      )}
+
+      <header
+        style={{
+          background: '#12121a',
+          borderBottom: '1px solid #1e1e2e',
+          padding: '12px 24px',
+          display: 'flex',
+          alignItems: 'center',
+          justifyContent: 'space-between',
+          gap: '16px',
+        }}
+      >
+        <div style={{ display: 'flex', alignItems: 'center', gap: '12px' }}>
+          <div
+            style={{
+              width: 32,
+              height: 32,
+              borderRadius: 8,
+              background: '#8b5cf6',
+              display: 'flex',
+              alignItems: 'center',
+              justifyContent: 'center',
+              fontWeight: 'bold',
+              color: 'white',
+            }}
+          >
+            R
+          </div>
+          <div style={{ display: 'flex', flexDirection: 'column', gap: 2 }}>
+            <span style={{ fontSize: '18px', fontWeight: 600, color: 'white' }}>RewindAI</span>
+            <span style={{ fontSize: '11px', color: '#64748b' }}>git for AI memory</span>
+          </div>
+          <span
+            style={{
+              fontSize: '11px',
+              padding: '2px 8px',
+              borderRadius: 999,
+              background: '#1e1e2e',
+              color: '#8b5cf6',
+            }}
+          >
+            Hackathon demo
           </span>
-          <select
-            value={userId}
-            onChange={e => setUserId(e.target.value)}
-            className="bg-surface border border-border rounded px-2 py-1 text-xs text-zinc-300"
+        </div>
+
+        <div style={{ display: 'flex', alignItems: 'center', gap: '12px', fontSize: '13px', flexWrap: 'wrap', justifyContent: 'flex-end' }}>
+          <span style={{ color: '#64748b' }}>Branch:</span>
+          <span
+            style={{
+              fontFamily: 'monospace',
+              padding: '2px 8px',
+              borderRadius: 4,
+              background: '#1e1e2e',
+              color: '#10b981',
+            }}
           >
-            <option value="alice">Alice Chen</option>
-            <option value="bob">Bob Kumar</option>
-          </select>
-          <button
-            onClick={handleNewSession}
-            className="px-3 py-1 bg-accent/20 text-accent text-xs rounded hover:bg-accent/30"
-          >
-            New Session
-          </button>
-          {status && <span className="text-[10px] text-zinc-500">{status}</span>}
+            {activeBranch}
+          </span>
+          <span style={{ color: '#64748b' }}>
+            Session: {activeSession ? activeSession.slice(0, 8) : 'starting'}
+          </span>
+          {appMessage && <span style={{ color: '#94a3b8' }}>{appMessage}</span>}
         </div>
       </header>
 
-      {/* Main layout */}
-      <div className="flex-1 flex overflow-hidden">
-        {/* Left sidebar: Branch Manager + Timeline */}
-        <aside className="w-56 border-r border-border flex flex-col">
-          <div className="flex-1 overflow-hidden flex flex-col">
-            <div className="h-1/2 border-b border-border overflow-hidden">
-              <BranchManager
-                currentBranch={branchName}
-                onBranchChange={setBranchName}
-                onCheckout={handleCheckout}
-                refreshTrigger={refreshTrigger}
-              />
-            </div>
-            <div className="h-1/2 overflow-y-auto">
-              <div className="p-3 text-xs text-zinc-500 border-b border-border">Timeline</div>
-              <Timeline
-                branchName={branchName}
-                refreshTrigger={refreshTrigger}
-                onCheckout={handleCheckoutCommit}
-              />
-            </div>
+      <div style={{ display: 'flex', flex: 1, minHeight: 0, overflow: 'hidden' }}>
+        <aside
+          style={{
+            width: 320,
+            borderRight: '1px solid #1e1e2e',
+            display: 'flex',
+            flexDirection: 'column',
+            minHeight: 0,
+            background: '#0f0f17',
+          }}
+        >
+          <div style={{ flex: '0 0 58%', minHeight: 0, overflow: 'hidden' }}>
+            <BranchManager
+              activeBranch={activeBranch}
+              onCheckout={handleCheckout}
+              onBranchChange={handleBranchChange}
+              refreshKey={branchRefreshKey}
+            />
+          </div>
+          <div style={{ borderTop: '1px solid #1e1e2e', flex: '1 1 auto', minHeight: 0, overflow: 'hidden' }}>
+            <Timeline
+              branchName={activeBranch}
+              refreshKey={branchRefreshKey}
+              onCheckout={(commitId, commitMessage) => handleCheckout(activeBranch, commitId, commitMessage)}
+            />
           </div>
         </aside>
 
-        {/* Center: Tabs */}
-        <main className="flex-1 flex flex-col overflow-hidden">
-          {/* Tab bar */}
-          <div className="flex border-b border-border">
-            {(['chat', 'graph', 'diff'] as Tab[]).map(t => (
+        <main style={{ flex: 1, display: 'flex', flexDirection: 'column', minWidth: 0, minHeight: 0 }}>
+          <div style={{ display: 'flex', borderBottom: '1px solid #1e1e2e', background: '#11111a' }}>
+            {(['chat', 'graph', 'diff'] as const).map(tab => (
               <button
-                key={t}
-                onClick={() => setTab(t)}
-                className={`px-4 py-2 text-xs capitalize ${
-                  tab === t
-                    ? 'text-accent border-b-2 border-accent'
-                    : 'text-zinc-500 hover:text-zinc-300'
-                }`}
+                key={tab}
+                onClick={() => setActiveTab(tab)}
+                style={{
+                  padding: '10px 20px',
+                  fontSize: '14px',
+                  fontWeight: 500,
+                  color: activeTab === tab ? '#8b5cf6' : '#64748b',
+                  borderBottom: activeTab === tab ? '2px solid #8b5cf6' : '2px solid transparent',
+                  background: 'transparent',
+                  borderTop: 'none',
+                  borderLeft: 'none',
+                  borderRight: 'none',
+                  cursor: 'pointer',
+                  textTransform: 'capitalize',
+                }}
               >
-                {t}
+                {tab}
               </button>
             ))}
           </div>
 
-          {/* Tab content */}
-          <div className="flex-1 overflow-hidden relative">
-            {tab === 'chat' && (
+          <div style={{ flex: 1, minHeight: 0, overflow: 'hidden', position: 'relative' }}>
+            {activeTab === 'chat' && (
               <ChatPanel
-                sessionId={sessionId}
-                branchName={branchName}
-                userId={userId}
-                onCompaction={handleCompaction}
-                onCommit={refresh}
+                sessionId={activeSession}
+                branchName={activeBranch}
+                onCommit={handleCommit}
               />
             )}
-            {tab === 'graph' && (
-              <GraphExplorer branchName={branchName} refreshTrigger={refreshTrigger} />
+            {activeTab === 'graph' && (
+              <GraphExplorer
+                key={`${activeBranch}-${branchRefreshKey}`}
+                branchName={activeBranch}
+                sessionId={activeSession}
+                onNodeSelect={setSelectedNode}
+              />
             )}
-            {tab === 'diff' && (
-              <DiffView branches={branches.map(b => b.name)} />
-            )}
+            {activeTab === 'diff' && <DiffView />}
           </div>
         </main>
       </div>
+
+      <footer
+        style={{
+          borderTop: '1px solid #1e1e2e',
+          padding: '6px 24px',
+          display: 'flex',
+          justifyContent: 'space-between',
+          gap: '12px',
+          fontSize: '11px',
+          color: '#475569',
+          background: '#0d0d14',
+        }}
+      >
+        <span>Neo4j: {healthStatus?.neo4j ?? 'checking'}</span>
+        <span>{selectedNode ? `Selected: ${String(selectedNode.label || selectedNode.id || 'node')}` : 'Ready for demo'}</span>
+        <span>RewindAI v0.1.0 — HackwithBay 2.0</span>
+      </footer>
     </div>
   )
 }

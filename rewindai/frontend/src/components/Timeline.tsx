@@ -4,19 +4,19 @@ import { useApi } from '../hooks/useApi'
 
 interface Props {
   branchName: string
-  refreshTrigger: number
-  onCheckout: (commitId: string) => void
+  refreshKey: number
+  onCheckout: (commitId: string, commitMessage: string) => void
 }
 
-export default function Timeline({ branchName, refreshTrigger, onCheckout }: Props) {
+export default function Timeline({ branchName, refreshKey, onCheckout }: Props) {
   const [entries, setEntries] = useState<TimelineEntry[]>([])
   const api = useApi()
 
   useEffect(() => {
     api.getTimeline(branchName).then(e => {
-      if (e) setEntries(e)
+      setEntries(e)
     })
-  }, [branchName, refreshTrigger])
+  }, [branchName, refreshKey])
 
   if (entries.length === 0) {
     return <div className="p-4 text-xs text-zinc-600">No timeline data</div>
@@ -29,7 +29,7 @@ export default function Timeline({ branchName, refreshTrigger, onCheckout }: Pro
           <div className="flex flex-col items-center">
             <div
               className="w-4 h-4 rounded-full border-2 border-emerald-500 bg-emerald-500/20 cursor-pointer hover:bg-emerald-500/40"
-              onClick={() => onCheckout(entry.commit.id)}
+              onClick={() => onCheckout(entry.commit.id, entry.commit.message)}
               title={`Checkout ${entry.commit.id.slice(0, 8)}`}
             />
             {i < entries.length - 1 && <div className="w-0.5 h-8 bg-zinc-700" />}

@@ -5,12 +5,10 @@ import { useApi } from '../hooks/useApi'
 interface Props {
   sessionId: string | null
   branchName: string
-  userId: string
-  onCompaction: (count: number) => void
-  onCommit: () => void
+  onCommit: (message: string) => void | Promise<void>
 }
 
-export default function ChatPanel({ sessionId, branchName, userId, onCompaction, onCommit }: Props) {
+export default function ChatPanel({ sessionId, branchName, onCommit }: Props) {
   const [messages, setMessages] = useState<Message[]>([])
   const [input, setInput] = useState('')
   const [sending, setSending] = useState(false)
@@ -40,23 +38,20 @@ export default function ChatPanel({ sessionId, branchName, userId, onCompaction,
     setInput('')
     setSending(true)
 
-    const res = await api.sendMessage(sessionId, input, userId)
+    const res = await api.sendMessage(sessionId, input, 'demo')
     if (res) {
       const assistantMsg: Message = { id: (Date.now() + 1).toString(), role: 'assistant', content: res.response }
       setMessages(prev => [...prev, assistantMsg])
-      if (res.compaction_occurred) {
-        onCompaction(res.memories_extracted)
-      }
     }
     setSending(false)
   }
 
   const handleCommit = async () => {
-    const res = await api.createCommit(branchName, commitMsg || 'Checkpoint', userId)
+    const res = await api.createCommit(branchName, commitMsg || 'Checkpoint', 'demo')
     if (res) {
       setShowCommit(false)
       setCommitMsg('')
-      onCommit()
+      await onCommit(commitMsg || 'Checkpoint')
     }
   }
 
@@ -77,7 +72,7 @@ export default function ChatPanel({ sessionId, branchName, userId, onCompaction,
                 : 'bg-surface text-zinc-300'
             }`}>
               <div className="text-[10px] text-zinc-500 mb-1">
-                {msg.role === 'user' ? userId : 'RewindAI'}
+                {msg.role === 'user' ? 'demo' : 'RewindAI'}
               </div>
               <div className="whitespace-pre-wrap">{msg.content}</div>
             </div>

@@ -3,13 +3,13 @@ import type { Branch, Commit } from '../types'
 import { useApi } from '../hooks/useApi'
 
 interface Props {
-  currentBranch: string
+  activeBranch: string
   onBranchChange: (branch: string) => void
-  onCheckout: (sessionId: string, branchName: string) => void
-  refreshTrigger: number
+  onCheckout: (branchName: string, commitId: string, commitMessage: string) => void
+  refreshKey: number
 }
 
-export default function BranchManager({ currentBranch, onBranchChange, onCheckout, refreshTrigger }: Props) {
+export default function BranchManager({ activeBranch, onBranchChange, onCheckout, refreshKey }: Props) {
   const [branches, setBranches] = useState<Branch[]>([])
   const [commits, setCommits] = useState<Commit[]>([])
   const [newBranch, setNewBranch] = useState('')
@@ -19,27 +19,28 @@ export default function BranchManager({ currentBranch, onBranchChange, onCheckou
 
   const refresh = async () => {
     const b = await api.listBranches()
-    if (b) setBranches(b)
-    const c = await api.listCommits(currentBranch)
-    if (c) setCommits(c)
+    setBranches(b)
+    const c = await api.listCommits(activeBranch)
+    setCommits(c)
   }
 
-  useEffect(() => { refresh() }, [currentBranch, refreshTrigger])
+  useEffect(() => { void refresh() }, [activeBranch, refreshKey])
 
   const handleCreate = async () => {
     if (!newBranch.trim()) return
-    await api.createBranch(newBranch, sourceCommit || undefined)
+    await api.createBranch(newBranch, sourceCommit || undefined, 'demo')
     setNewBranch('')
     setSourceCommit('')
     setShowNew(false)
-    refresh()
+    void refresh()
   }
 
-  const handleCheckout = async (commitId?: string) => {
-    const result = await api.checkoutBranch(currentBranch, commitId)
-    if (result) {
-      onCheckout(result.session_id, result.branch_name)
+  const handleCheckout = (commitId?: string, commitMessage = 'Checkout commit') => {
+    if (!commitId) {
+      return
     }
+
+    onCheckout(activeBranch, commitId, commitMessage)
   }
 
   return (
@@ -48,7 +49,7 @@ export default function BranchManager({ currentBranch, onBranchChange, onCheckou
       <div className="p-3 border-b border-border">
         <div className="text-xs text-zinc-500 mb-1">Branch</div>
         <select
-          value={currentBranch}
+          value={activeBranch}
           onChange={e => onBranchChange(e.target.value)}
           className="w-full bg-surface border border-border rounded px-2 py-1.5 text-sm text-zinc-200"
         >
@@ -103,7 +104,7 @@ export default function BranchManager({ currentBranch, onBranchChange, onCheckou
             <div
               key={c.id}
               className="group flex items-start gap-2 p-2 rounded hover:bg-surface cursor-pointer"
-              onClick={() => handleCheckout(c.id)}
+              onClick={() => handleCheckout(c.id, c.message)}
             >
               <div className="flex flex-col items-center">
                 <div className={`w-3 h-3 rounded-full border-2 ${

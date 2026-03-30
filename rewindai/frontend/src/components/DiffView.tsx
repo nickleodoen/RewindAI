@@ -3,11 +3,8 @@ import type { DiffResult } from '../types'
 import { useApi } from '../hooks/useApi'
 import { NODE_COLORS } from '../utils/cytoscape'
 
-interface Props {
-  branches: string[]
-}
-
-export default function DiffView({ branches }: Props) {
+export default function DiffView() {
+  const branches = ['main', 'graphql-exploration']
   const [branchA, setBranchA] = useState(branches[0] || 'main')
   const [branchB, setBranchB] = useState(branches[1] || '')
   const [diff, setDiff] = useState<DiffResult | null>(null)
@@ -16,7 +13,7 @@ export default function DiffView({ branches }: Props) {
   const runDiff = async () => {
     if (!branchA || !branchB || branchA === branchB) return
     const result = await api.diffBranches(branchA, branchB)
-    if (result) setDiff(result)
+    setDiff(result)
   }
 
   return (

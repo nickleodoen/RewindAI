@@ -1,7 +1,6 @@
-import { useState, useCallback } from 'react'
 import type {
   Session, Message, ChatResponse, Branch, Commit, Memory,
-  DiffResult, GraphData, TimelineEntry,
+  DiffResult, GraphData, TimelineEntry, HealthResponse,
 } from '../types'
 
 const API = '/api/v1'
@@ -18,89 +17,101 @@ async function apiFetch<T>(path: string, options?: RequestInit): Promise<T> {
   return res.json()
 }
 
-export function useApi() {
-  const [loading, setLoading] = useState(false)
-  const [error, setError] = useState<string | null>(null)
-
-  const wrap = useCallback(async <T>(fn: () => Promise<T>): Promise<T | null> => {
-    setLoading(true)
-    setError(null)
-    try {
-      const result = await fn()
-      return result
-    } catch (e) {
-      setError(e instanceof Error ? e.message : String(e))
-      return null
-    } finally {
-      setLoading(false)
+function withQuery(path: string, params: Record<string, string | undefined>) {
+  const search = new URLSearchParams()
+  Object.entries(params).forEach(([key, value]) => {
+    if (value) {
+      search.set(key, value)
     }
-  }, [])
+  })
+
+  return search.size > 0 ? `${path}?${search.toString()}` : path
+}
+
+export function useApi() {
+  const getHealth = () =>
+    fetch('/health').then(async res => {
+      if (!res.ok) {
+        throw new Error(`Health check failed: ${res.statusText}`)
+      }
+
+      return res.json() as Promise<HealthResponse>
+    })
 
   // Sessions
   const createSession = (branch_name: string, user_id: string) =>
-    wrap(() => apiFetch<Session>('/sessions', {
+    apiFetch<Session>('/sessions', {
       method: 'POST',
       body: JSON.stringify({ branch_name, user_id }),
-    }))
+    })
 
-  const listSessions = () => wrap(() => apiFetch<Session[]>('/sessions'))
+  const listSessions = () => apiFetch<Session[]>('/sessions')
 
   const getMessages = (sessionId: string) =>
-    wrap(() => apiFetch<Message[]>(`/sessions/${sessionId}/messages`))
+    apiFetch<Message[]>(`/sessions/${sessionId}/messages`)
 
   // Chat
   const sendMessage = (session_id: string, message: string, user_id: string) =>
-    wrap(() => apiFetch<ChatResponse>('/chat', {
+    apiFetch<ChatResponse>('/chat', {
       method: 'POST',
       body: JSON.stringify({ session_id, message, user_id }),
-    }))
+    })
 
   // Branches
-  const createBranch = (branch_name: string, source_commit_id?: string, user_id?: string) =>
-    wrap(() => apiFetch<Branch>('/branches', {
+  const createBranch = (branch_name: string, source_commit_id?: string, user_id = 'demo') =>
+    apiFetch<Branch>('/branches', {
       method: 'POST',
       body: JSON.stringify({ branch_name, source_commit_id, user_id }),
-    }))
+    })
 
-  const listBranches = () => wrap(() => apiFetch<Branch[]>('/branches'))
+  const listBranches = () => apiFetch<Branch[]>('/branches')
 
-  const checkoutBranch = (branch_name: string, commit_id?: string, user_id?: string) =>
-    wrap(() => apiFetch<{ session_id: string; branch_name: string; commit_id: string }>('/branches/checkout', {
+  const checkoutBranch = (branch_name: string, commit_id?: string, user_id = 'demo') =>
+    apiFetch<{
+      session_id: string
+      branch_name: string
+      commit_id: string
+      context_messages?: Array<{ role: string; content: string }>
+      memory_count?: number
+    }>('/branches/checkout', {
       method: 'POST',
       body: JSON.stringify({ branch_name, commit_id, user_id }),
-    }))
+    })
 
   // Commits
-  const createCommit = (branch_name: string, message: string, user_id?: string) =>
-    wrap(() => apiFetch<Commit>('/commits', {
+  const createCommit = (branch_name: string, message: string, user_id = 'demo') =>
+    apiFetch<Commit>('/commits', {
       method: 'POST',
       body: JSON.stringify({ branch_name, message, user_id }),
-    }))
+    })
 
   const listCommits = (branch_name: string) =>
-    wrap(() => apiFetch<Commit[]>(`/commits?branch_name=${branch_name}`))
+    apiFetch<Commit[]>(withQuery('/commits', { branch_name }))
 
   // Memories
   const listMemories = (branch_name: string) =>
-    wrap(() => apiFetch<Memory[]>(`/memories?branch_name=${branch_name}`))
+    apiFetch<Memory[]>(withQuery('/memories', { branch_name }))
 
   // Diff
   const diffBranches = (branch_a: string, branch_b: string) =>
-    wrap(() => apiFetch<DiffResult>('/diff', {
+    apiFetch<DiffResult>('/diff', {
       method: 'POST',
       body: JSON.stringify({ branch_a, branch_b }),
-    }))
+    })
 
   // Graph
   const getGraphNeighborhood = (nodeId: string) =>
-    wrap(() => apiFetch<GraphData>(`/graph/neighborhood/${nodeId}`))
+    apiFetch<GraphData>(`/graph/neighborhood/${nodeId}`)
+
+  const getBranchGraph = (branch_name: string) =>
+    apiFetch<GraphData>(`/graph/branch/${branch_name}`)
 
   // Timeline
   const getTimeline = (branch_name: string) =>
-    wrap(() => apiFetch<TimelineEntry[]>(`/timeline/${branch_name}`))
+    apiFetch<TimelineEntry[]>(`/timeline/${branch_name}`)
 
   return {
-    loading, error,
+    getHealth,
     createSession, listSessions, getMessages,
     sendMessage,
     createBranch, listBranches, checkoutBranch,
@@ -108,6 +119,7 @@ export function useApi() {
     listMemories,
     diffBranches,
     getGraphNeighborhood,
+    getBranchGraph,
     getTimeline,
   }
 }
