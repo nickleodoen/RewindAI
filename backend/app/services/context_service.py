@@ -79,31 +79,46 @@ async def _extract_via_claude(conversation_text: str) -> dict:
         }
 
     client = anthropic.Anthropic(api_key=settings.anthropic_api_key)
-    response = client.messages.create(
-        model="claude-sonnet-4-6",
-        max_tokens=2048,
-        messages=[
-            {
-                "role": "user",
-                "content": f"{EXTRACTION_PROMPT}\n\nCONVERSATION:\n{conversation_text[:8000]}",
-            }
-        ],
-    )
 
-    text = response.content[0].text
-    try:
-        return json.loads(text)
-    except json.JSONDecodeError:
-        # Try to extract JSON from the response
-        start = text.find("{")
-        end = text.rfind("}") + 1
-        if start >= 0 and end > start:
-            return json.loads(text[start:end])
-        logger.error("Failed to parse extraction response")
-        return {
-            "summary": text[:200],
-            "decisions": [],
-            "filesDiscussed": [],
-            "keyFacts": [],
-            "compressedContext": conversation_text[:2000],
-        }
+    # Try multiple model IDs in case one isn't available
+    for model in ["claude-sonnet-4-6", "claude-sonnet-4-20250514", "claude-3-5-sonnet-20241022"]:
+        try:
+            response = client.messages.create(
+                model=model,
+                max_tokens=2048,
+                messages=[
+                    {
+                        "role": "user",
+                        "content": f"{EXTRACTION_PROMPT}\n\nCONVERSATION:\n{conversation_text[:8000]}",
+                    }
+                ],
+            )
+            text = response.content[0].text
+            try:
+                return json.loads(text)
+            except json.JSONDecodeError:
+                start = text.find("{")
+                end = text.rfind("}") + 1
+                if start >= 0 and end > start:
+                    return json.loads(text[start:end])
+                logger.error("Failed to parse extraction response from %s", model)
+                return {
+                    "summary": text[:200],
+                    "decisions": [],
+                    "filesDiscussed": [],
+                    "keyFacts": [],
+                    "compressedContext": conversation_text[:2000],
+                }
+        except Exception as e:
+            logger.warning("Model %s failed: %s, trying next", model, e)
+            continue
+
+    # All models failed — return minimal extraction
+    logger.error("All extraction models failed")
+    return {
+        "summary": f"Conversation with {conversation_text.count('[user]:')} user messages",
+        "decisions": [],
+        "filesDiscussed": [],
+        "keyFacts": [],
+        "compressedContext": conversation_text[:2000],
+    }

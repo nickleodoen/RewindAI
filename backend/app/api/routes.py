@@ -31,8 +31,12 @@ async def create_snapshot(request: CreateSnapshotRequest):
     """Create a context snapshot for a commit."""
     driver = await get_driver()
 
-    # Extract structured metadata from the conversation
-    extracted = await context_service.extract_context(request.messages)
+    # Extract structured metadata — best-effort, don't fail snapshot on extraction error
+    extracted: dict = {}
+    try:
+        extracted = await context_service.extract_context(request.messages)
+    except Exception as e:
+        logger.warning("Context extraction failed (snapshot will still be saved): %s", e)
 
     result = await snapshot_service.create_snapshot(
         driver=driver,
@@ -128,14 +132,22 @@ async def chat(request: ChatRequest):
     # Add the new user message
     messages.append({"role": "user", "content": request.message})
 
-    response = client.messages.create(
-        model="claude-sonnet-4-6",
-        max_tokens=4096,
-        system=request.system_prompt or "You are a helpful AI coding assistant.",
-        messages=messages,
-    )
-
-    assistant_text = response.content[0].text
+    assistant_text = ""
+    for model in ["claude-sonnet-4-6", "claude-sonnet-4-20250514", "claude-3-5-sonnet-20241022"]:
+        try:
+            response = client.messages.create(
+                model=model,
+                max_tokens=4096,
+                system=request.system_prompt or "You are a helpful AI coding assistant.",
+                messages=messages,
+            )
+            assistant_text = response.content[0].text
+            break
+        except Exception as e:
+            logger.warning("Chat model %s failed: %s", model, e)
+            continue
+    else:
+        raise HTTPException(status_code=503, detail="All Claude models failed")
 
     # Return full updated history
     messages.append({"role": "assistant", "content": assistant_text})
