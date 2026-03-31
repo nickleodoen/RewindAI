@@ -113,3 +113,18 @@ class RewindApi:
         if target_branch:
             payload["target_branch"] = target_branch
         return self._request("POST", "/api/v1/workspace/merge", payload=payload)
+
+    def health(self) -> dict[str, Any]:
+        return self._request("GET", "/health")
+
+    def timeline(self, branch_name: str) -> list[dict[str, Any]]:
+        return self._request("GET", f"/api/v1/timeline/{branch_name}")
+
+    def commit_snapshot(self, commit_id: str) -> dict[str, Any]:
+        return self._request("GET", f"/api/v1/commits/{commit_id}/snapshot")
+
+    def graph_branch(self, branch_name: str) -> dict[str, Any]:
+        return self._request("GET", f"/api/v1/graph/branch/{branch_name}")
+
+    def memories(self, branch_name: str) -> list[dict[str, Any]]:
+        return self._request("GET", "/api/v1/memories", params={"branch_name": branch_name})

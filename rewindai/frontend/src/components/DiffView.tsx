@@ -38,7 +38,27 @@ function MemoryCard({ memory }: { memory: Memory }) {
   )
 }
 
-function MergeSummaryCard({ preview, loading, error }: { preview: MergePreview | null; loading: boolean; error: string | null }) {
+function MergeSummaryCard({ preview, loading, error, isDetached }: { preview: MergePreview | null; loading: boolean; error: string | null; isDetached: boolean }) {
+  if (isDetached) {
+    return (
+      <div className="rounded-lg p-4" style={{ background: 'rgba(139,92,246,0.04)', border: '1px solid rgba(139,92,246,0.12)' }}>
+        <div className="flex items-center gap-2">
+          <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="#a78bfa" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" className="opacity-70">
+            <circle cx="12" cy="12" r="10" />
+            <polyline points="12 6 12 12 16 14" />
+          </svg>
+          <span className="text-xs font-medium text-violet-300">Historical Snapshot Mode</span>
+        </div>
+        <div className="mt-2 text-[12px] leading-relaxed text-text-secondary">
+          You're viewing a historical snapshot in detached mode. Merge preview is available after reattaching to a branch.
+        </div>
+        <div className="mt-2 text-[11px] text-text-muted">
+          Branch diffs are still available below.
+        </div>
+      </div>
+    )
+  }
+
   if (loading) {
     return (
       <div
@@ -181,6 +201,8 @@ export default function DiffView({ activeBranch, workspaceMode }: Props) {
     }
   }, [branchA, branchB, branches])
 
+  const isDetached = workspaceMode === 'detached'
+
   useEffect(() => {
     let cancelled = false
 
@@ -192,15 +214,21 @@ export default function DiffView({ activeBranch, workspaceMode }: Props) {
       }
 
       setLoadingDiff(true)
-      setLoadingMergePreview(true)
       setError(null)
       setMergeError(null)
 
+      // Skip merge preview when detached — it will fail and isn't useful
+      if (!isDetached) {
+        setLoadingMergePreview(true)
+      }
+
       try {
-        const [diffResult, previewResult] = await Promise.all([
-          api.diffBranches(branchA, branchB),
-          api.mergePreview(branchB, branchA),
-        ])
+        const diffPromise = api.diffBranches(branchA, branchB)
+        const previewPromise = isDetached
+          ? Promise.resolve(null)
+          : api.mergePreview(branchB, branchA).catch(() => null)
+
+        const [diffResult, previewResult] = await Promise.all([diffPromise, previewPromise])
         if (!cancelled) {
           setDiff(diffResult)
           setMergePreview(previewResult)
@@ -226,7 +254,7 @@ export default function DiffView({ activeBranch, workspaceMode }: Props) {
     return () => {
       cancelled = true
     }
-  }, [branchA, branchB, refreshTick])
+  }, [branchA, branchB, refreshTick, isDetached])
 
   const onlyA = diff?.only_a ?? []
   const onlyB = diff?.only_b ?? []
@@ -291,7 +319,7 @@ export default function DiffView({ activeBranch, workspaceMode }: Props) {
       <div className="flex-1 overflow-y-auto px-5 py-4">
         {/* Merge preview */}
         <div className="mb-4">
-          <MergeSummaryCard preview={mergePreview} loading={loadingMergePreview} error={mergeError} />
+          <MergeSummaryCard preview={mergePreview} loading={loadingMergePreview} error={mergeError} isDetached={isDetached} />
         </div>
 
         {loadingBranches && (

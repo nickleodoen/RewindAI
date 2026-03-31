@@ -1,177 +1,131 @@
 # RewindAI Demo Runbook
 
-This is the fastest way to get RewindAI into a known-good judge-ready state.
-
-## One-Time Setup
-
-### Infrastructure
+## Quick Start
 
 ```bash
+# 1. Infrastructure
 docker compose up -d
-```
 
-### Backend
+# 2. Backend
+cd backend && source .venv/bin/activate && uvicorn app.main:app --reload --port 8000
 
-```bash
-cd backend
-python3 -m venv .venv
-source .venv/bin/activate
-pip install -r requirements.txt
-uvicorn app.main:app --reload --port 8000
-```
+# 3. Frontend
+cd frontend && npm run dev
 
-### Frontend
-
-```bash
-cd frontend
-npm install
-npm run dev
-```
-
-### CLI
-
-```bash
+# 4. CLI
 pip install -e ./cli
-```
-
-Optional environment defaults:
-
-```bash
 export REWINDAI_API_URL=http://localhost:8000
 export REWINDAI_USER=demo
 ```
 
-## Reset To The Known Demo State
+## Demo Commands
+
+All demo operations are under `rewind demo`:
+
+| Command | What it does |
+|---------|-------------|
+| `rewind demo prepare` | Reset to known-good state, seed data, verify |
+| `rewind demo verify` | Smoke-test every demo-critical endpoint |
+| `rewind demo safe` | Attach to pre-merged branch, print safe flow |
+| `rewind demo live` | Attach to main, print live interactive flow |
+| `rewind demo script` | Print the full 90s and 2min presenter scripts |
+| `rewind demo reset` | Alias for prepare |
+
+One-shot chat:
 
 ```bash
-./scripts/reset_demo.sh
+rewind --user demo ask "What API direction did we land on?"
 ```
 
-Expected result:
+## Pre-Demo Checklist
 
-- `main`, `graphql-exploration`, and `merged-demo` exist
-- the demo workspace is attached to `main`
-- `merged-demo` contains a merge commit
-- diff and merge-preview are non-empty and legible
-- chat fallback is verified
+```bash
+rewind demo prepare     # seeds data, verifies everything
+rewind demo verify      # green checklist of all endpoints
+rewind demo safe        # attaches to merged-demo, prints flow
+```
 
-## Safe Demo Flow
+Open http://localhost:5173 in the browser.
 
-Use this when you want the lowest-risk demo.
+## Safe Demo Flow (90 seconds)
+
+Use this for the lowest-risk demo. The merged-demo branch has all data pre-merged.
 
 ### Terminal
 
 ```bash
-rewind --user demo checkout merged-demo
 rewind --user demo status
+rewind --user demo ask "What API direction did we land on?"
 ```
 
-### Browser
+### Browser (http://localhost:5173)
 
-Open `http://localhost:5173`.
+1. **Graph tab** — show the merge diamond in the DAG on merged-demo
+2. **Diff tab** — compare main vs graphql-exploration (REST vs GraphQL)
+3. **Timeline sidebar** — click the merge commit to open the Snapshot Inspector
+4. **Snapshot Inspector** — show grouped memories (decisions, facts, action items)
+5. **Chat tab** — ask: "What API direction did we land on?"
 
-Show:
+### Spoken Track
 
-1. branch / `HEAD` / workspace mode in the top bar
-2. graph tab on `merged-demo`
-3. merge diamond in the graph
-4. diff tab comparing `main` vs `graphql-exploration`
-5. chat tab asking: `What API direction did we land on?`
+- "This is Git for AI memory, not just a chatbot."
+- "The AI's memory has real commits, branches, and merge commits."
+- "Click any commit to inspect exactly what the AI knew at that point."
+- "The answer is grounded in merged team knowledge — not raw chat."
 
-### Spoken track
+## Live Interactive Demo Flow (2 minutes)
 
-- “This is Git for AI memory, not just a chatbot.”
-- “Here the AI’s memory has real commits, branches, and a merge commit.”
-- “The merged branch knows both reasoning paths and the final reconciliation.”
-
-## Live Interactive Demo Flow
-
-Use this when you want to show the mechanics live.
+Use this to show the mechanics live.
 
 ### Terminal
 
 ```bash
-rewind --user demo checkout main
 rewind --user demo status
 rewind --user demo log
 rewind --user demo diff main graphql-exploration
 rewind --user demo merge graphql-exploration --strategy manual
 ```
 
-Suggested manual resolution:
-
-```text
-Use REST for public APIs and GraphQL for internal graph-heavy workflows.
-```
+Suggested resolution: "Use REST for public APIs and GraphQL for internal graph-heavy workflows."
 
 ### Browser
 
-Open `http://localhost:5173` and:
+1. Show the graph before merge
+2. Switch to diff and explain the conflict
+3. Complete the CLI merge
+4. Refresh the browser — show the new merge diamond
+5. Ask the chat panel: "What API direction did we land on?"
 
-1. stay on `main`
-2. show the graph before merge
-3. switch to diff and explain the conflict
-4. complete the CLI merge
-5. refresh the browser graph and show the new merge diamond
-6. ask the chat panel what API direction the team landed on
+### Spoken Track
 
-## Presenter Script
+- "These are two divergent memory timelines — one chose REST, the other explored GraphQL."
+- "Merging AI memory works like Git: preview conflicts, resolve them, create a merge commit."
+- "The graph now shows the merged cognitive timeline as a diamond commit in the DAG."
 
-### Step 1
+## Snapshot Inspector Demo
 
-Action:
+This is one of the strongest demo moments:
 
-```bash
-rewind --user demo status
-```
+1. Click any commit in the Timeline sidebar
+2. The Snapshot Inspector shows:
+   - Commit metadata (id, timestamp, branch, parents)
+   - AI memory state summary ("AI knew 7 memories: 2 decisions, 3 facts...")
+   - Expandable memory groups by type
+   - Reconstructed context prompt
+3. Click **"Rewind chat to this snapshot"**
+4. The app enters detached mode and switches to Chat
+5. Ask a question — the answer is grounded in that historical memory state
+6. The AI does NOT know about facts from later commits
 
-Say:
+## Rescue Path
 
-> RewindAI gives the model a real workspace HEAD, so we always know exactly what memory state the AI is operating from.
-
-### Step 2
-
-Action:
-
-```bash
-rewind --user demo diff main graphql-exploration
-```
-
-Say:
-
-> These are two different memory timelines: one chose REST, the other explored GraphQL.
-
-### Step 3
-
-Action:
+If anything breaks during a live demo:
 
 ```bash
-rewind --user demo merge graphql-exploration --strategy manual
+rewind demo safe
 ```
 
-Say:
-
-> Merging AI memory works like Git: we preview conflicts, resolve them, and create a true two-parent merge commit.
-
-### Step 4
-
-Action:
-
-- switch to the browser graph
-
-Say:
-
-> The graph now shows the merged cognitive timeline as a diamond commit in the DAG.
-
-### Step 5
-
-Action:
-
-- ask the chat panel: `What API direction did we land on?`
-
-Say:
-
-> The answer is grounded in the merged memory world, not just the latest raw chat.
+This switches to the pre-merged branch instantly. Continue from the browser.
 
 ## Troubleshooting
 
@@ -181,7 +135,7 @@ Say:
 curl http://localhost:8000/health
 ```
 
-If this fails, restart the backend.
+If this fails, restart: `cd backend && uvicorn app.main:app --reload`
 
 ### Neo4j not connected
 
@@ -194,8 +148,7 @@ Then restart the backend.
 ### Frontend blank or stale
 
 ```bash
-cd frontend
-npm run dev
+cd frontend && npm run dev
 ```
 
 Refresh the browser.
@@ -203,11 +156,21 @@ Refresh the browser.
 ### Demo data looks wrong
 
 ```bash
-./scripts/reset_demo.sh
+rewind demo prepare
 ```
 
-### Provider failure during chat
+### Chat shows fallback instead of live response
 
-That is expected to degrade gracefully.
+This degrades gracefully. The memory-grounded fallback still demonstrates the core product.
+Explain: "RewindAI remains historically grounded even when the live model layer is unavailable."
 
-You should see a memory-grounded fallback notice instead of raw provider error text. Continue the demo and explain that RewindAI remains historically grounded even when the live model layer is unavailable.
+### Detached mode after rewind
+
+This is normal. After "Rewind chat to this snapshot," the workspace enters detached mode.
+The Diff tab shows a clean info state instead of errors. To return to normal:
+
+```bash
+rewind --user demo checkout merged-demo
+```
+
+Or click a branch in the Branch Manager sidebar.
