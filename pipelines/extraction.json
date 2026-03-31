@@ -1,0 +1,51 @@
+{
+  "name": "extraction",
+  "description": "Extract structured metadata from conversation context",
+  "version": "1.0.0",
+  "nodes": [
+    {
+      "id": "input",
+      "type": "input",
+      "config": {
+        "schema": {
+          "text": "string"
+        }
+      }
+    },
+    {
+      "id": "chunker",
+      "type": "chunker",
+      "config": {
+        "chunk_size": 8000,
+        "overlap": 200,
+        "strategy": "token"
+      },
+      "inputs": ["input.text"]
+    },
+    {
+      "id": "extractor",
+      "type": "llm",
+      "config": {
+        "provider": "anthropic",
+        "model": "claude-sonnet-4-6",
+        "max_tokens": 2048,
+        "system_prompt": "You are a context extraction engine. Given conversation chunks, extract structured metadata as JSON.",
+        "prompt_template": "Extract from this conversation:\n1. Summary (2-3 sentences)\n2. Decisions with rationale\n3. File paths discussed\n4. Key facts\n5. Compressed conversation (keep decisions, drop verbose output)\n\nReturn ONLY valid JSON: {summary, decisions: [{content, rationale}], filesDiscussed: [], keyFacts: [], compressedContext}\n\nCONVERSATION:\n{{input}}"
+      },
+      "inputs": ["chunker.chunks"]
+    },
+    {
+      "id": "parser",
+      "type": "json_parser",
+      "config": {
+        "strict": false
+      },
+      "inputs": ["extractor.output"]
+    },
+    {
+      "id": "output",
+      "type": "output",
+      "inputs": ["parser.parsed"]
+    }
+  ]
+}

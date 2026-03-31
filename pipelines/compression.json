@@ -1,0 +1,51 @@
+{
+  "name": "compression",
+  "description": "Compress long conversation context while preserving key decisions",
+  "version": "1.0.0",
+  "nodes": [
+    {
+      "id": "input",
+      "type": "input",
+      "config": {
+        "schema": {
+          "messages": "array",
+          "keepLastN": "number"
+        }
+      }
+    },
+    {
+      "id": "splitter",
+      "type": "custom",
+      "config": {
+        "operation": "split_messages",
+        "description": "Split messages into old (to compress) and recent (to keep verbatim)"
+      },
+      "inputs": ["input.messages", "input.keepLastN"]
+    },
+    {
+      "id": "summarizer",
+      "type": "llm",
+      "config": {
+        "provider": "anthropic",
+        "model": "claude-sonnet-4-6",
+        "max_tokens": 2048,
+        "system_prompt": "Compress this conversation while preserving ALL decisions and their rationale. Drop verbose tool outputs and debugging loops. Keep the essential reasoning chain.",
+        "prompt_template": "Compress the following conversation turns into a concise summary that preserves decisions, rationale, and key facts:\n\n{{old_messages}}"
+      },
+      "inputs": ["splitter.old_messages"]
+    },
+    {
+      "id": "merger",
+      "type": "custom",
+      "config": {
+        "operation": "merge_compressed_and_recent"
+      },
+      "inputs": ["summarizer.output", "splitter.recent_messages"]
+    },
+    {
+      "id": "output",
+      "type": "output",
+      "inputs": ["merger.merged"]
+    }
+  ]
+}

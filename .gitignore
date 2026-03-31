@@ -1,0 +1,10 @@
+.env
+*.pyc
+__pycache__/
+node_modules/
+extension/out/
+neo4j_data/
+.vscode/
+*.log
+.DS_Store
+*.vsix

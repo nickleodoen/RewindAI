@@ -1,0 +1,34 @@
+{
+  "name": "reconstruction",
+  "description": "Reconcile stored context with current file state for checkout restoration",
+  "version": "1.0.0",
+  "nodes": [
+    {
+      "id": "input",
+      "type": "input",
+      "config": {
+        "schema": {
+          "storedContext": "object",
+          "currentFileState": "object"
+        }
+      }
+    },
+    {
+      "id": "reconciler",
+      "type": "llm",
+      "config": {
+        "provider": "anthropic",
+        "model": "claude-sonnet-4-6",
+        "max_tokens": 4096,
+        "system_prompt": "You reconcile stored AI context with the current state of files. Produce an updated context string that accurately reflects what was known at the stored point while noting any significant file changes since then.",
+        "prompt_template": "STORED CONTEXT:\n{{storedContext}}\n\nCURRENT FILE STATE:\n{{currentFileState}}\n\nProduce a reconciled context suitable for injecting into a new AI session. Preserve all decisions and rationale from the stored context. Note any files that have changed significantly."
+      },
+      "inputs": ["input.storedContext", "input.currentFileState"]
+    },
+    {
+      "id": "output",
+      "type": "output",
+      "inputs": ["reconciler.output"]
+    }
+  ]
+}

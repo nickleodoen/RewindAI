@@ -1,0 +1,58 @@
+{
+  "name": "rewindai",
+  "displayName": "RewindAI",
+  "description": "Version-controlled AI memory tied to git commits. Context auto-saves on commit, auto-restores on checkout.",
+  "version": "0.2.0",
+  "publisher": "rewindai",
+  "engines": {
+    "vscode": "^1.93.0"
+  },
+  "categories": [
+    "Chat"
+  ],
+  "activationEvents": [
+    "workspaceContains:.git"
+  ],
+  "main": "./out/extension.js",
+  "contributes": {
+    "chatParticipants": [
+      {
+        "id": "rewindai.rewind",
+        "name": "rewind",
+        "fullName": "RewindAI",
+        "description": "AI coding assistant with version-controlled memory tied to git commits",
+        "isSticky": true,
+        "commands": [
+          {
+            "name": "history",
+            "description": "Show commits with saved AI context"
+          },
+          {
+            "name": "status",
+            "description": "Show current context status"
+          }
+        ]
+      }
+    ],
+    "configuration": {
+      "title": "RewindAI",
+      "properties": {
+        "rewindai.backendUrl": {
+          "type": "string",
+          "default": "http://localhost:8000",
+          "description": "URL of the RewindAI backend service"
+        }
+      }
+    }
+  },
+  "scripts": {
+    "compile": "tsc -p ./",
+    "watch": "tsc -watch -p ./",
+    "lint": "eslint src --ext ts"
+  },
+  "devDependencies": {
+    "@types/node": "^20.0.0",
+    "@types/vscode": "^1.93.0",
+    "typescript": "^5.5.0"
+  }
+}
