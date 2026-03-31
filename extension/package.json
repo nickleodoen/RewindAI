@@ -15,6 +15,15 @@
   ],
   "main": "./out/extension.js",
   "contributes": {
+    "views": {
+      "panel": [
+        {
+          "type": "webview",
+          "id": "rewindai.panel",
+          "name": "RewindAI"
+        }
+      ]
+    },
     "chatParticipants": [
       {
         "id": "rewindai.rewind",

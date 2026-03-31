@@ -1,10 +1,12 @@
 import * as vscode from 'vscode';
 import { Repository } from './types';
 import { ContextManager } from '../context/manager';
+import { RewindPanelProvider } from '../chat/panelProvider';
 
 /**
  * Watches git state for commits and checkouts.
  * Auto-snapshots on commit, auto-restores on checkout.
+ * Notifies the RewindAI panel on state changes.
  */
 export class GitWatcher implements vscode.Disposable {
   private disposables: vscode.Disposable[] = [];
@@ -14,6 +16,7 @@ export class GitWatcher implements vscode.Disposable {
   constructor(
     private repo: Repository,
     private contextManager: ContextManager,
+    private panelProvider?: RewindPanelProvider,
   ) {
     this.lastKnownCommit = repo.state.HEAD?.commit;
     this.lastKnownBranch = repo.state.HEAD?.name;
@@ -58,6 +61,9 @@ export class GitWatcher implements vscode.Disposable {
 
     await this.contextManager.saveSnapshot(commitSha, branch, commitMessage);
 
+    // Notify the panel
+    this.panelProvider?.notifySnapshotSaved(commitSha, commitMessage);
+
     vscode.window.showInformationMessage(
       `RewindAI: Context saved for ${commitSha.slice(0, 7)} — "${commitMessage.slice(0, 50)}"`
     );
@@ -65,6 +71,9 @@ export class GitWatcher implements vscode.Disposable {
 
   private async onCheckout(commitSha: string, branch: string): Promise<void> {
     const hasContext = await this.contextManager.loadSnapshotForCommit(commitSha);
+
+    // Notify the panel
+    this.panelProvider?.notifyContextChanged(commitSha, branch, hasContext);
 
     if (hasContext) {
       vscode.window.showInformationMessage(

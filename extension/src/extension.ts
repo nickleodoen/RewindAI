@@ -1,6 +1,7 @@
 import * as vscode from 'vscode';
 import { GitExtension, Repository } from './git/types';
 import { RewindChatParticipant } from './chat/participant';
+import { RewindPanelProvider } from './chat/panelProvider';
 import { GitWatcher } from './git/watcher';
 import { ContextManager } from './context/manager';
 import { BackendClient } from './backend/client';
@@ -11,6 +12,7 @@ class RewindInstance {
   private chatParticipant: RewindChatParticipant;
   private gitWatcher: GitWatcher;
   private contextManager: ContextManager;
+  private panelProvider: RewindPanelProvider;
 
   constructor(
     context: vscode.ExtensionContext,
@@ -19,8 +21,25 @@ class RewindInstance {
   ) {
     const backend = new BackendClient();
     this.contextManager = new ContextManager(workspaceRoot, backend);
+
+    // Register the RewindAI panel (shows as its own tab next to Terminal)
+    this.panelProvider = new RewindPanelProvider(
+      context.extensionUri,
+      this.contextManager,
+      workspaceRoot,
+    );
+    context.subscriptions.push(
+      vscode.window.registerWebviewViewProvider(
+        RewindPanelProvider.viewType,
+        this.panelProvider,
+      ),
+    );
+
+    // Also register the @rewind chat participant (works in Copilot Chat too)
     this.chatParticipant = new RewindChatParticipant(context, this.contextManager, workspaceRoot);
-    this.gitWatcher = new GitWatcher(repo, this.contextManager);
+
+    // Git watcher with panel notifications
+    this.gitWatcher = new GitWatcher(repo, this.contextManager, this.panelProvider);
 
     context.subscriptions.push(this.chatParticipant, this.gitWatcher);
 
@@ -33,15 +52,7 @@ class RewindInstance {
     if (commit) {
       const loaded = await this.contextManager.loadSnapshotForCommit(commit);
       const branch = this.gitWatcher.getCurrentBranch();
-      if (loaded) {
-        vscode.window.showInformationMessage(
-          `RewindAI: Context loaded for ${branch} @ ${commit.slice(0, 7)}`
-        );
-      } else {
-        vscode.window.showInformationMessage(
-          `RewindAI: Active on ${branch} — no prior context`
-        );
-      }
+      this.panelProvider.notifyContextChanged(commit, branch, loaded);
     }
   }
 
@@ -83,9 +94,7 @@ export function activate(context: vscode.ExtensionContext): void {
       disposable.dispose();
     });
     context.subscriptions.push(disposable);
-    vscode.window.showInformationMessage('RewindAI: Waiting for git repository...');
   } else {
-    // Git extension not yet active — activate it and retry
     gitExt.activate().then((exports) => {
       const api = exports.getAPI(1);
       if (api.repositories.length > 0) {
