@@ -245,7 +245,7 @@ async def _seed_story(driver, *, api_url: str, user_id: str) -> dict[str, Any]:
         },
     )
     if not merge_result.get("merge_commit"):
-        raise DemoSeedError("The pre-seeded merged-demo branch did not produce a merge commit.")
+        raise DemoSeedError("The pre-seeded merged branch did not produce a merge commit.")
 
     _http_request_json(
         "POST",
@@ -324,9 +324,9 @@ def verify_demo_state(*, api_url: str, user_id: str) -> None:
 
     merged_graph = _http_request_json(
         "GET",
-        _api_url(api_url, "/api/v1/graph/branch/merged-demo"),
+        _api_url(api_url, "/api/v1/graph/branch/merged"),
     )
-    _assert(_find_merge_nodes(merged_graph), "Expected merged-demo graph to contain a merge commit node.")
+    _assert(_find_merge_nodes(merged_graph), "Expected merged graph to contain a merge commit node.")
 
     _http_request_json(
         "POST",
