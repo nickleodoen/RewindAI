@@ -1,10 +1,9 @@
-"""Interactive RewindAI demo shell / REPL."""
+"""Interactive RewindAI shell — presentation-grade REPL."""
 
 from __future__ import annotations
 
 import os
 import platform
-import shlex
 import subprocess
 from datetime import datetime
 from pathlib import Path
@@ -44,8 +43,22 @@ TYPE_ICONS = {
 BROWSER_URL = "http://localhost:5173"
 BACKEND_URL = "http://localhost:8000"
 
+# ── Branch → project phase mapping ──────────────────────────────────────────
+
+BRANCH_PHASE = {
+    "main": ("REST API Direction", "The team has chosen REST for the public API surface."),
+    "graphql-exploration": ("GraphQL Exploration", "Bob is exploring GraphQL as an alternative API approach."),
+    "merged": ("Merged Resolution", "REST for public APIs, GraphQL for internal graph-heavy workflows."),
+}
+
+BRANCH_DOCS = {
+    "main": ["docs/architecture.md", "docs/rest_direction.md"],
+    "graphql-exploration": ["docs/architecture.md", "docs/graphql_exploration.md"],
+    "merged": ["docs/architecture.md", "docs/rest_direction.md", "docs/graphql_exploration.md", "docs/merged_decision.md"],
+}
 
 # ── Helpers ──────────────────────────────────────────────────────────────────
+
 
 def _short(val: str | None, length: int = 8) -> str:
     return val[:length] if val else "—"
@@ -73,19 +86,42 @@ def _err(msg: str) -> None:
     console.print(f"  [red]{msg}[/red]")
 
 
+def _phase_for_branch(branch: str) -> tuple[str, str]:
+    """Return (phase_name, phase_description) for a branch."""
+    if branch in BRANCH_PHASE:
+        return BRANCH_PHASE[branch]
+    # Backward compat: merged-demo → merged
+    if branch == "merged-demo":
+        return BRANCH_PHASE.get("merged", ("Unknown", ""))
+    return ("Working", f"Active branch: {branch}")
+
+
+def _docs_for_branch(branch: str) -> list[str]:
+    if branch in BRANCH_DOCS:
+        return BRANCH_DOCS[branch]
+    if branch == "merged-demo":
+        return BRANCH_DOCS.get("merged", [])
+    return ["docs/architecture.md"]
+
+
 # ── Shell class ──────────────────────────────────────────────────────────────
 
+
 class RewindShell:
-    """Interactive demo shell for RewindAI."""
+    """Interactive shell for RewindAI."""
 
     def __init__(self, api: RewindApi) -> None:
         self.api = api
         self.linked_project: str | None = None
         self._last_branch: str | None = None
-        # Pre-set the default demo project if it exists
-        default_project = Path(__file__).resolve().parents[2] / "demo" / "project" / "public-api-demo"
-        if default_project.is_dir():
-            self.linked_project = str(default_project)
+        # Auto-link the showcase workspace if it exists
+        for candidate in (
+            Path(__file__).resolve().parents[2] / "showcase" / "workspace" / "public-api",
+            Path(__file__).resolve().parents[2] / "demo" / "project" / "public-api-demo",
+        ):
+            if candidate.is_dir():
+                self.linked_project = str(candidate)
+                break
 
     # ── Dispatch ─────────────────────────────────────────────────────────
 
@@ -93,7 +129,7 @@ class RewindShell:
         "help", "link", "status", "branches", "use", "graph", "diff",
         "timeline", "snapshot", "rewind", "ask", "context", "memories",
         "llm", "verify", "script", "open", "clear", "exit", "quit",
-        "back", "head", "log",
+        "back", "head", "log", "project", "guide",
     }
 
     def dispatch(self, raw: str) -> bool:
@@ -141,16 +177,18 @@ class RewindShell:
         mode = st.get("mode", "unknown")
         head = _short(st.get("head_commit_id"))
         mem = st.get("active_memory_count", 0)
+        phase_name, _ = _phase_for_branch(branch)
 
         banner = (
-            f"[bold bright_magenta]RewindAI Shell[/bold bright_magenta]  "
+            f"[bold bright_magenta]RewindAI[/bold bright_magenta]  "
             f"[dim]git for AI memory[/dim]\n\n"
             f"  [bold]branch:[/bold] [cyan]{branch}[/cyan]   "
             f"[bold]mode:[/bold] {'[yellow]' + mode + '[/yellow]' if mode == 'detached' else mode}   "
             f"[bold]HEAD:[/bold] [green]{head}[/green]   "
-            f"[bold]memories:[/bold] {mem}\n\n"
-            f"  Type [cyan]help[/cyan] for commands, or just ask a question.\n"
-            f"  Type [cyan]exit[/cyan] to quit."
+            f"[bold]memories:[/bold] {mem}\n"
+            f"  [bold]phase:[/bold]  [dim]{phase_name}[/dim]\n\n"
+            f"  Type [cyan]help[/cyan] for commands, or just type a question.\n"
+            f"  Type [cyan]guide[/cyan] for the recommended presentation flow."
         )
         console.print(Panel(banner, border_style="bright_magenta", padding=(1, 2)))
 
@@ -166,38 +204,42 @@ class RewindShell:
 
         table.add_row("", "")
         table.add_row("[dim]── Workspace ──[/dim]", "")
-        table.add_row("status", "Show workspace state, branch, HEAD, memory count")
+        table.add_row("status", "Workspace state, branch, HEAD, memory count")
         table.add_row("branches", "List all branches")
         table.add_row("use <branch>", "Switch to a branch")
-        table.add_row("back", "Reattach to last branch after detached rewind")
-        table.add_row("head", "Show current HEAD commit details")
+        table.add_row("back", "Reattach to last branch after rewind")
+        table.add_row("head", "Current HEAD commit details")
         table.add_row("", "")
         table.add_row("[dim]── History ──[/dim]", "")
-        table.add_row("log", "Show commit log for current branch")
+        table.add_row("log", "Commit log for current branch")
         table.add_row("timeline", "Visual commit timeline with merge badges")
-        table.add_row("graph", "ASCII DAG of the current branch graph")
+        table.add_row("graph", "Memory graph as DAG tree")
         table.add_row("diff [a] [b]", "Compare two branches side-by-side")
-        table.add_row("snapshot [id]", "Inspect AI memory at a commit")
-        table.add_row("rewind <id>", "Checkout a historical snapshot (detached)")
+        table.add_row("snapshot [id]", "Inspect AI memory state at a commit")
+        table.add_row("rewind <id>", "Time-travel to a historical snapshot")
         table.add_row("", "")
-        table.add_row("[dim]── Memory ──[/dim]", "")
-        table.add_row("context", "Summary of what the AI knows right now")
-        table.add_row("memories [type]", "List memory items, optionally filtered by type")
-        table.add_row("ask <question>", "One-shot question from current memory state")
+        table.add_row("[dim]── Memory & AI ──[/dim]", "")
+        table.add_row("context", "What the AI knows right now")
+        table.add_row("memories [type]", "List memory items, optionally filtered")
+        table.add_row("ask <question>", "One-shot question from current state")
         table.add_row("[dim]<freeform text>[/dim]", "[dim]Also sends as a chat question[/dim]")
         table.add_row("", "")
-        table.add_row("[dim]── Demo ──[/dim]", "")
-        table.add_row("llm", "Show model / fallback status")
-        table.add_row("verify", "Run demo smoke-test checklist")
-        table.add_row("script", "Print the presenter demo script")
-        table.add_row("link [path]", "Link a demo project folder")
-        table.add_row("open", "Print useful URLs and paths")
+        table.add_row("[dim]── Project ──[/dim]", "")
+        table.add_row("project", "Show linked project workspace and state")
+        table.add_row("link [path]", "Link a project workspace folder")
+        table.add_row("open", "URLs, paths, and open browser")
+        table.add_row("", "")
+        table.add_row("[dim]── Presenter ──[/dim]", "")
+        table.add_row("guide", "Recommended presentation flow")
+        table.add_row("llm", "Model / fallback status")
+        table.add_row("verify", "Smoke-test checklist")
+        table.add_row("script", "Full presenter script with narration")
         table.add_row("", "")
         table.add_row("[dim]── Utility ──[/dim]", "")
         table.add_row("clear", "Clear the screen")
         table.add_row("exit", "Quit the shell")
 
-        console.print(Panel(table, title="[bold]RewindAI Shell Commands[/bold]", border_style="bright_magenta", padding=(0, 2)))
+        console.print(Panel(table, title="[bold]Commands[/bold]", border_style="bright_magenta", padding=(0, 2)))
 
     def cmd_status(self, args: str) -> None:
         st = self.api.status()
@@ -205,22 +247,24 @@ class RewindShell:
         branch = st.get("branch_name") or st.get("origin_branch") or "—"
         is_merge = st.get("head_is_merge", False)
         parents = st.get("head_parent_ids", [])
+        phase_name, phase_desc = _phase_for_branch(branch)
 
         mode_style = "[yellow]detached[/yellow]" if mode == "detached" else f"[green]{mode}[/green]"
 
         lines = [
             f"  [bold]Mode[/bold]         {mode_style}",
             f"  [bold]Branch[/bold]       [cyan]{branch}[/cyan]",
-            f"  [bold]HEAD[/bold]         [green]{_short(st.get('head_commit_id'))}[/green]",
-            f"  [bold]Message[/bold]      {st.get('head_message') or '—'}",
+            f"  [bold]HEAD[/bold]         [green]{_short(st.get('head_commit_id'))}[/green]  {st.get('head_message') or '—'}",
             f"  [bold]Session[/bold]      [dim]{_short(st.get('session_id'))}[/dim]",
-            f"  [bold]Memories[/bold]     {st.get('active_memory_count', 0)} active",
-            f"  [bold]Breakdown[/bold]    {_breakdown(st.get('memory_breakdown', {}))}",
+            f"  [bold]Memories[/bold]     {st.get('active_memory_count', 0)} active  ({_breakdown(st.get('memory_breakdown', {}))})",
+            f"  [bold]Phase[/bold]        {phase_name}",
         ]
         if is_merge:
             lines.append(f"  [bold]Merge HEAD[/bold]   [green]yes[/green] ({', '.join(_short(p) for p in parents)})")
+        if mode == "detached":
+            lines.append(f"  [dim]  Historical snapshot — AI knows only what existed at this point[/dim]")
         if self.linked_project:
-            lines.append(f"  [bold]Project[/bold]      [dim]{self.linked_project}[/dim]")
+            lines.append(f"  [bold]Project[/bold]      [dim]{Path(self.linked_project).name}[/dim]")
 
         console.print(Panel("\n".join(lines), title="[bold]Workspace[/bold]", border_style="cyan", padding=(1, 1)))
 
@@ -234,16 +278,17 @@ class RewindShell:
         table.add_column("Branch", style="bold cyan")
         table.add_column("HEAD", style="green")
         table.add_column("Tip Message")
-        table.add_column("From", style="dim")
+        table.add_column("Phase", style="dim")
 
         for b in branches:
             marker = "[bright_magenta]*[/bright_magenta]" if b["name"] == current else " "
+            phase_name, _ = _phase_for_branch(b["name"])
             table.add_row(
                 marker,
                 b["name"],
                 _short(b.get("head_commit_id")),
                 b.get("head_message") or "[dim]no commits[/dim]",
-                _short(b.get("branched_from_commit_id")),
+                phase_name,
             )
         console.print(Panel(table, title="[bold]Branches[/bold]", border_style="cyan", padding=(0, 1)))
 
@@ -256,12 +301,15 @@ class RewindShell:
         self._last_branch = st.get("branch_name")
         result = self.api.attach_branch(branch, reuse_session=False)
         new_st = result.get("status", {})
+        phase_name, phase_desc = _phase_for_branch(branch)
         console.print(Panel(
             f"  [bold]Branch[/bold]   [cyan]{branch}[/cyan]\n"
             f"  [bold]HEAD[/bold]     [green]{_short(new_st.get('head_commit_id'))}[/green]\n"
             f"  [bold]Session[/bold]  [dim]{_short(new_st.get('session_id'))}[/dim]\n"
-            f"  [bold]Memories[/bold] {new_st.get('active_memory_count', 0)} active",
-            title=f"[bold green]Attached to {branch}[/bold green]",
+            f"  [bold]Memories[/bold] {new_st.get('active_memory_count', 0)} active\n"
+            f"  [bold]Phase[/bold]    {phase_name}\n"
+            f"  [dim]{phase_desc}[/dim]",
+            title=f"[bold green]Attached → {branch}[/bold green]",
             border_style="green",
             padding=(1, 1),
         ))
@@ -331,7 +379,6 @@ class RewindShell:
             is_head = c["id"] == head_id
             is_last = i == len(entries) - 1
 
-            # Build the node symbol
             if is_merge:
                 node = "[green]◆[/green]"
             elif is_head:
@@ -339,13 +386,11 @@ class RewindShell:
             else:
                 node = "[dim]○[/dim]"
 
-            # Build the line
             head_tag = " [bright_magenta]← HEAD[/bright_magenta]" if is_head else ""
             merge_tag = " [green]merge[/green]" if is_merge else ""
             line = f"  {node}  [green]{cid}[/green]  {c.get('message') or '—'}{merge_tag}{head_tag}"
             lines.append(line)
 
-            # Connector
             if not is_last:
                 lines.append("  [dim]│[/dim]")
 
@@ -360,20 +405,15 @@ class RewindShell:
         nodes = graph.get("nodes", [])
         edges = graph.get("edges", [])
 
-        # Classify nodes
         commits = []
         memories = []
-        branch_nodes = []
         for n in nodes:
             label = n.get("label", "")
             if label == "Commit":
                 commits.append(n)
             elif label == "Memory":
                 memories.append(n)
-            elif label == "Branch":
-                branch_nodes.append(n)
 
-        # Sort commits by createdAt
         commits.sort(key=lambda c: c.get("properties", {}).get("createdAt", ""), reverse=True)
 
         tree = Tree(f"[bold bright_magenta]◈ {branch}[/bold bright_magenta]  [dim]({len(commits)} commits, {len(memories)} memories)[/dim]")
@@ -393,7 +433,6 @@ class RewindShell:
 
             commit_node = tree.add(f"[{color}]{icon}[/{color}] [{color}]{cid}[/{color}]  {msg}{merge_info}{head_tag}")
 
-            # Find memories linked to this commit via edges
             linked_mem_ids = set()
             for e in edges:
                 if e.get("source") == c.get("id") or e.get("target") == c.get("id"):
@@ -402,7 +441,6 @@ class RewindShell:
                         if m.get("id") == other:
                             linked_mem_ids.add(m["id"])
 
-            # Show a compact summary of linked memories
             linked = [m for m in memories if m.get("id") in linked_mem_ids]
             if linked:
                 types_count: dict[str, int] = {}
@@ -430,13 +468,11 @@ class RewindShell:
         only_a = diff.get("only_a", [])
         only_b = diff.get("only_b", [])
 
-        # Summary
-        console.print(Rule(f"[bold]Diff: {ref_a} vs {ref_b}[/bold]", style="cyan"))
+        console.print(Rule(f"[bold]Diff: {ref_a}  ↔  {ref_b}[/bold]", style="cyan"))
         console.print(f"  [bold]{ref_a}[/bold] has [magenta]{len(only_a)}[/magenta] unique memories")
         console.print(f"  [bold]{ref_b}[/bold] has [magenta]{len(only_b)}[/magenta] unique memories")
         console.print()
 
-        # Side by side panels
         def _mem_block(mems: list[dict], title: str, color: str) -> Panel:
             if not mems:
                 return Panel("[dim]No unique memories[/dim]", title=title, border_style=color, padding=(1, 1))
@@ -467,27 +503,40 @@ class RewindShell:
         c = snap.get("commit", {})
         is_merge = snap.get("is_merge", False)
         parents = snap.get("parent_ids", [])
+        branch = snap.get("branch_name", "—")
+        mem_count = snap.get("active_memory_count", 0)
+        bd = snap.get("memory_breakdown", {})
+        phase_name, phase_desc = _phase_for_branch(branch)
 
-        # Header
+        # ── Commit metadata ──
         lines = [
-            f"  [bold]Commit[/bold]      [green]{_short(c.get('id'))}[/green]",
-            f"  [bold]Message[/bold]     {c.get('message') or '—'}",
-            f"  [bold]Timestamp[/bold]   {_ts(c.get('created_at'))}",
-            f"  [bold]Branch[/bold]      [cyan]{snap.get('branch_name', '—')}[/cyan]",
-            f"  [bold]Author[/bold]      {c.get('user_id') or '—'}",
+            f"  [bold]Commit[/bold]       [green]{_short(c.get('id'))}[/green]",
+            f"  [bold]Message[/bold]      {c.get('message') or '—'}",
+            f"  [bold]Timestamp[/bold]    {_ts(c.get('created_at'))}",
+            f"  [bold]Branch[/bold]       [cyan]{branch}[/cyan]",
+            f"  [bold]Author[/bold]       {c.get('user_id') or '—'}",
         ]
         if parents:
-            lines.append(f"  [bold]Parents[/bold]     {', '.join(_short(p) for p in parents)}")
+            lines.append(f"  [bold]Parents[/bold]      {', '.join(_short(p) for p in parents)}")
         if is_merge:
-            lines.append(f"  [bold]Merge[/bold]       [green]yes[/green]  from {snap.get('merged_from_branch') or '—'}")
+            lines.append(f"  [bold]Merge[/bold]        [green]yes[/green]  from {snap.get('merged_from_branch') or '—'}")
         if snap.get("compaction_snapshot_count", 0):
-            lines.append(f"  [bold]Compactions[/bold] {snap['compaction_snapshot_count']}")
-        lines.append("")
-        lines.append(f"  [bold bright_magenta]{snap.get('context_summary', '—')}[/bold bright_magenta]")
+            lines.append(f"  [bold]Compactions[/bold]  {snap['compaction_snapshot_count']}")
 
         console.print(Panel("\n".join(lines), title="[bold]Snapshot[/bold]", border_style="bright_magenta", padding=(1, 1)))
 
-        # Memory groups
+        # ── Agent state summary ──
+        agent_lines = [
+            f"  [bold bright_magenta]{snap.get('context_summary', '—')}[/bold bright_magenta]",
+            "",
+            f"  The AI has [bold]{mem_count}[/bold] active memories: {_breakdown(bd)}",
+            f"  Phase: [bold]{phase_name}[/bold] — {phase_desc}",
+        ]
+        if is_merge:
+            agent_lines.append("  This is a [green]merge point[/green] — knowledge from multiple branches combined.")
+        console.print(Panel("\n".join(agent_lines), title="[bold]Agent State at This Point[/bold]", border_style="magenta", padding=(1, 1)))
+
+        # ── Memory groups ──
         grouped = snap.get("grouped_memories", {})
         type_order = ["decision", "fact", "action_item", "question", "context"]
         for mem_type in type_order:
@@ -509,6 +558,19 @@ class RewindShell:
                 padding=(0, 1),
             ))
 
+        # ── Project context ──
+        if self.linked_project:
+            docs = _docs_for_branch(branch)
+            project_path = Path(self.linked_project)
+            existing = [d for d in docs if (project_path / d).exists()]
+            if existing:
+                doc_list = "  ".join(f"[dim]{d}[/dim]" for d in existing)
+                console.print(f"  [bold]Relevant docs:[/bold]  {doc_list}")
+
+        # ── Next steps ──
+        console.print(f"\n  [dim]→ rewind {_short(c.get('id'))}[/dim]   [dim]time-travel to this point[/dim]")
+        console.print(f"  [dim]→ ask ...[/dim]            [dim]query the AI from current state[/dim]")
+
     def cmd_rewind(self, args: str) -> None:
         commit_id = args.strip()
         if not commit_id:
@@ -522,16 +584,23 @@ class RewindShell:
         new_st = result.get("status", {})
         branch = new_st.get("origin_branch") or new_st.get("branch_name") or "—"
         mem_count = new_st.get("active_memory_count", 0)
+        bd = new_st.get("memory_breakdown", {})
+        phase_name, phase_desc = _phase_for_branch(branch)
 
         console.print(Panel(
-            f"  [bold]Mode[/bold]       [yellow]detached[/yellow]  (historical snapshot)\n"
-            f"  [bold]Origin[/bold]     [cyan]{branch}[/cyan]\n"
-            f"  [bold]HEAD[/bold]       [green]{_short(result.get('commit_id'))}[/green]\n"
-            f"  [bold]Session[/bold]    [dim]{_short(result.get('session_id'))}[/dim]\n"
-            f"  [bold]Memories[/bold]   {mem_count} active\n\n"
-            f"  The AI now knows [bold]only[/bold] what existed at this point.\n"
-            f"  Ask a question to test historical isolation.\n"
-            f"  Type [cyan]back[/cyan] to reattach to {self._last_branch or 'a branch'}.",
+            f"  [bold]Mode[/bold]        [yellow]detached[/yellow]  (historical snapshot)\n"
+            f"  [bold]Origin[/bold]      [cyan]{branch}[/cyan]\n"
+            f"  [bold]HEAD[/bold]        [green]{_short(result.get('commit_id'))}[/green]\n"
+            f"  [bold]Session[/bold]     [dim]{_short(result.get('session_id'))}[/dim]\n"
+            f"  [bold]Memories[/bold]    {mem_count} active  ({_breakdown(bd)})\n"
+            f"  [bold]Phase[/bold]       {phase_name}\n\n"
+            f"  [bold bright_magenta]Time-travel active.[/bold bright_magenta]\n"
+            f"  The AI now knows [bold]only[/bold] what existed at this point in history.\n"
+            f"  Later decisions, facts, and context are invisible.\n\n"
+            f"  [dim]→ ask ...[/dim]     query the AI from this historical state\n"
+            f"  [dim]→ context[/dim]     see exactly what the AI knows\n"
+            f"  [dim]→ snapshot HEAD[/dim]  inspect memories at this point\n"
+            f"  [dim]→ back[/dim]        return to {self._last_branch or 'previous branch'}",
             title="[bold bright_magenta]Rewound[/bold bright_magenta]",
             border_style="bright_magenta",
             padding=(1, 1),
@@ -550,15 +619,20 @@ class RewindShell:
         mem_count = st.get("active_memory_count", 0)
         bd = st.get("memory_breakdown", {})
         mode = st.get("mode", "unknown")
+        phase_name, phase_desc = _phase_for_branch(branch)
 
         lines = [
-            f"  [bold]The AI currently operates from:[/bold]",
-            f"  Branch [cyan]{branch}[/cyan] in [{'yellow' if mode == 'detached' else 'green'}]{mode}[/] mode",
-            f"  HEAD: [green]{_short(st.get('head_commit_id'))}[/green] — {st.get('head_message') or '—'}",
-            f"  [bold]{mem_count}[/bold] active memories: {_breakdown(bd)}",
+            f"  [bold]Branch[/bold]      [cyan]{branch}[/cyan]  ({'[yellow]detached[/yellow]' if mode == 'detached' else '[green]attached[/green]'})",
+            f"  [bold]HEAD[/bold]        [green]{_short(st.get('head_commit_id'))}[/green]  {st.get('head_message') or '—'}",
+            f"  [bold]Memories[/bold]    [bold]{mem_count}[/bold] active  ({_breakdown(bd)})",
+            f"  [bold]Phase[/bold]       {phase_name}",
         ]
+        if mode == "detached":
+            lines.append(f"\n  [bold yellow]Historical snapshot[/bold yellow] — AI sees only this point in time.")
+        else:
+            lines.append(f"\n  [bold green]Live[/bold green] — AI has full branch context up to HEAD.")
 
-        # Fetch and show top items per type
+        # Fetch and show memories by type
         try:
             memories = self.api.memories(branch)
         except ApiError:
@@ -625,7 +699,6 @@ class RewindShell:
         st = self.api.status()
         branch = st.get("branch_name") or st.get("origin_branch") or "—"
 
-        # Quick chat probe
         mode = "unknown"
         notice = None
         try:
@@ -636,10 +709,10 @@ class RewindShell:
             mode = "unreachable"
 
         mode_style = {
-            "live": "[green]live[/green]  — Anthropic Claude API responding",
-            "fallback": "[yellow]fallback[/yellow]  — Memory-grounded demo synthesis",
+            "live": "[green]live[/green]  — Claude API responding",
+            "fallback": "[yellow]fallback[/yellow]  — Memory-grounded synthesis",
             "mock": "[yellow]mock[/yellow]  — Simulated responses from memory state",
-            "unreachable": "[red]unreachable[/red]  — Backend chat endpoint failed",
+            "unreachable": "[red]unreachable[/red]  — Chat endpoint failed",
         }
 
         lines = [
@@ -647,7 +720,7 @@ class RewindShell:
             f"  [bold]Branch[/bold]      [cyan]{branch}[/cyan]",
             f"  [bold]Memories[/bold]    {st.get('active_memory_count', 0)} active",
             "",
-            "  Answers remain grounded in the versioned memory graph",
+            "  Answers are grounded in the versioned memory graph",
             "  regardless of provider status.",
         ]
         if notice:
@@ -656,7 +729,7 @@ class RewindShell:
         console.print(Panel("\n".join(lines), title="[bold]LLM Status[/bold]", border_style="cyan", padding=(1, 1)))
 
     def cmd_verify(self, args: str) -> None:
-        console.print(Panel("[bold]Demo Verify[/bold]", border_style="cyan"))
+        console.print(Panel("[bold]System Check[/bold]", border_style="cyan"))
         passed = 0
         total = 0
 
@@ -684,13 +757,15 @@ class RewindShell:
         try:
             br = self.api.branches()
             names = {b["name"] for b in br}
-            check("Branches", all(b in names for b in ("main", "graphql-exploration", "merged-demo")), ", ".join(sorted(names)))
+            # Accept both "merged" and "merged-demo" for backward compat
+            merged_ok = "merged" in names or "merged-demo" in names
+            check("Branches", "main" in names and "graphql-exploration" in names and merged_ok, ", ".join(sorted(names)))
         except ApiError as e:
             check("Branches", False, str(e))
 
         try:
             d = self.api.diff("main", "graphql-exploration")
-            check("Diff", bool(d.get("only_a")) and bool(d.get("only_b")), f"{len(d.get('only_a',[]))} vs {len(d.get('only_b',[]))}")
+            check("Diff", bool(d.get("only_a")) and bool(d.get("only_b")), f"{len(d.get('only_a', []))} vs {len(d.get('only_b', []))}")
         except ApiError as e:
             check("Diff", False, str(e))
 
@@ -700,8 +775,18 @@ class RewindShell:
         except ApiError as e:
             check("Timeline", False, str(e))
 
+        # Find the merged branch (either name)
+        merged_branch = "merged"
         try:
-            tl = self.api.timeline("merged-demo")
+            br = self.api.branches()
+            names = {b["name"] for b in br}
+            if "merged" not in names and "merged-demo" in names:
+                merged_branch = "merged-demo"
+        except ApiError:
+            pass
+
+        try:
+            tl = self.api.timeline(merged_branch)
             if tl:
                 snap = self.api.commit_snapshot(tl[-1]["commit"]["id"])
                 check("Snapshot", snap.get("active_memory_count", 0) > 0, f"{snap.get('active_memory_count', 0)} memories")
@@ -711,13 +796,13 @@ class RewindShell:
             check("Snapshot", False, str(e))
 
         try:
-            g = self.api.graph_branch("merged-demo")
+            g = self.api.graph_branch(merged_branch)
             check("Graph", len(g.get("nodes", [])) > 0, f"{len(g.get('nodes', []))} nodes")
         except ApiError as e:
             check("Graph", False, str(e))
 
         try:
-            self.api.attach_branch("merged-demo", reuse_session=False)
+            self.api.attach_branch(merged_branch, reuse_session=False)
             r = self.api.chat("ping")
             check("Chat", bool(r.get("response")), f"mode={r.get('response_mode', '?')}")
             self.api.attach_branch("main", reuse_session=False)
@@ -729,42 +814,166 @@ class RewindShell:
         console.print(f"  [{color}][bold]{passed}/{total} passed[/bold][/{color}]")
 
     def cmd_script(self, args: str) -> None:
-        user = self.api.user_id
-        script = f"""\
-[bold cyan]═══ Safe Demo (90 seconds) ═══[/bold cyan]
+        script = """\
+[bold cyan]═══ 90-Second Presentation ═══[/bold cyan]
 
-  [cyan]use merged-demo[/cyan]
-  Say: "Git for AI memory. The merged branch combines two thinking paths."
+  [cyan]use merged[/cyan]
+  "Git for AI memory. The merged branch combines two thinking paths."
 
   [cyan]status[/cyan]
-  Say: "The workspace has a real HEAD, branch, and memory count."
+  "Real workspace HEAD — we know exactly what memory state the AI operates from."
 
   [cyan]diff main graphql-exploration[/cyan]
-  Say: "These are divergent memory timelines — REST vs GraphQL."
+  "Divergent memory timelines — one chose REST, the other explored GraphQL."
 
   [cyan]timeline[/cyan]
-  Say: "Every commit is a snapshot of the AI's knowledge."
+  "Every commit is a snapshot of the AI's knowledge at that moment."
 
   [cyan]snapshot HEAD[/cyan]
-  Say: "Click any commit and inspect what the AI knew — grouped by type."
+  "Inspect exactly what the AI knew — grouped by type, with full context."
 
   [cyan]ask What API direction did we land on?[/cyan]
-  Say: "The answer comes from merged team knowledge, not raw chat."
+  "The answer comes from merged team knowledge, not raw chat history."
 
-[bold cyan]═══ Rescue ═══[/bold cyan]
+[bold cyan]═══ 2-Minute Presentation ═══[/bold cyan]
 
-  [cyan]use merged-demo[/cyan]
-  This reattaches to the safe branch instantly."""
+  [cyan]status[/cyan]  →  [cyan]branches[/cyan]  →  [cyan]timeline[/cyan]
+  "RewindAI tracks AI memory like Git tracks code. Commits, branches, history."
+
+  [cyan]diff main graphql-exploration[/cyan]
+  "Alice chose REST. Bob explored GraphQL. Divergent memory timelines."
+
+  [cyan]snapshot HEAD[/cyan]
+  "This is the current agent state — every decision, fact, and question."
+
+  [cyan]rewind <early-commit-id>[/cyan]
+  "Time-travel. The AI now only knows what existed at that point."
+
+  [cyan]ask What did we decide about the API?[/cyan]
+  "It doesn't know about the merge. Historical isolation is provable."
+
+  [cyan]back[/cyan]
+  "Return to the present. Context fully restored."
+
+  [cyan]ask What API direction did we land on?[/cyan]
+  "Now it knows the merged outcome. Time-travel is real."
+
+[bold cyan]═══ Recovery ═══[/bold cyan]
+
+  [cyan]use merged[/cyan]    — reattach to the safe branch instantly
+  [cyan]verify[/cyan]         — check all systems"""
         console.print(Panel(script, title="[bold]Presenter Script[/bold]", border_style="bright_magenta", padding=(1, 2)))
+
+    def cmd_project(self, args: str) -> None:
+        if not self.linked_project:
+            console.print(Panel(
+                "  No project workspace linked.\n\n"
+                "  Use [cyan]link <path>[/cyan] to attach a project folder,\n"
+                "  or [cyan]link[/cyan] to use the default workspace.",
+                title="[bold]Project[/bold]",
+                border_style="dim",
+                padding=(1, 1),
+            ))
+            return
+
+        project_path = Path(self.linked_project)
+        st = self.api.status()
+        branch = st.get("branch_name") or st.get("origin_branch") or "—"
+        phase_name, phase_desc = _phase_for_branch(branch)
+
+        # Count files
+        all_files = [f for f in project_path.rglob("*") if f.is_file()]
+        doc_count = sum(1 for f in all_files if f.suffix == ".md")
+        py_count = sum(1 for f in all_files if f.suffix == ".py")
+
+        # Build file tree
+        tree = Tree(f"[bold cyan]{project_path.name}/[/bold cyan]")
+        relevant_docs = set(_docs_for_branch(branch))
+
+        def _add_dir(parent_tree, dir_path: Path, depth: int = 0):
+            if depth > 3:
+                return
+            items = sorted(dir_path.iterdir(), key=lambda p: (not p.is_dir(), p.name))
+            for item in items:
+                if item.name.startswith(".") and item.name != ".gitignore":
+                    continue
+                rel = str(item.relative_to(project_path))
+                if item.is_dir():
+                    subtree = parent_tree.add(f"[bold]{item.name}/[/bold]")
+                    _add_dir(subtree, item, depth + 1)
+                else:
+                    marker = " [bright_magenta]←[/bright_magenta]" if rel in relevant_docs else ""
+                    parent_tree.add(f"{item.name}{marker}")
+
+        _add_dir(tree, project_path)
+
+        console.print(Panel(tree, title="[bold]Project Workspace[/bold]", border_style="cyan", padding=(1, 1)))
+
+        # Phase and relevance info
+        console.print(Panel(
+            f"  [bold]Branch[/bold]    [cyan]{branch}[/cyan]\n"
+            f"  [bold]Phase[/bold]     {phase_name}\n"
+            f"  [bold]Summary[/bold]   {phase_desc}\n"
+            f"  [bold]Files[/bold]     {len(all_files)} ({doc_count} docs, {py_count} source)\n\n"
+            f"  [dim]Files marked with [bright_magenta]←[/bright_magenta] are relevant to the current branch.[/dim]",
+            title="[bold]Project State[/bold]",
+            border_style="magenta",
+            padding=(1, 1),
+        ))
+
+    def cmd_guide(self, args: str) -> None:
+        st = self.api.status()
+        branch = st.get("branch_name") or st.get("origin_branch") or "—"
+
+        # Find the merged branch name
+        merged_name = "merged"
+        try:
+            br = self.api.branches()
+            names = {b["name"] for b in br}
+            if "merged" not in names and "merged-demo" in names:
+                merged_name = "merged-demo"
+        except ApiError:
+            pass
+
+        guide = f"""\
+  [bold]Recommended Presentation Flow[/bold]
+
+  [bold cyan]1.[/bold cyan] [cyan]use {merged_name}[/cyan]          switch to the merged branch
+  [bold cyan]2.[/bold cyan] [cyan]status[/cyan]                workspace overview
+  [bold cyan]3.[/bold cyan] [cyan]project[/cyan]               show the linked project workspace
+  [bold cyan]4.[/bold cyan] [cyan]branches[/cyan]              three branches, three perspectives
+  [bold cyan]5.[/bold cyan] [cyan]diff main graphql-exploration[/cyan]
+                             divergent memory timelines
+  [bold cyan]6.[/bold cyan] [cyan]timeline[/cyan]              commit history with merge point
+  [bold cyan]7.[/bold cyan] [cyan]snapshot HEAD[/cyan]          agent state at the merge point
+  [bold cyan]8.[/bold cyan] [cyan]ask What API direction did we land on?[/cyan]
+                             answer grounded in merged knowledge
+
+  [bold]Time-Travel (the wow moment):[/bold]
+
+  [bold cyan]9.[/bold cyan] [cyan]rewind <early-commit>[/cyan]  go back in time
+  [bold cyan]10.[/bold cyan] [cyan]context[/cyan]               see what the AI knows now
+  [bold cyan]11.[/bold cyan] [cyan]ask What did we decide about the API?[/cyan]
+                             it doesn't know about later decisions
+  [bold cyan]12.[/bold cyan] [cyan]back[/cyan]                  return to the present
+
+  [dim]Current: {branch} — type any command to begin[/dim]"""
+
+        console.print(Panel(guide, title="[bold]Presentation Guide[/bold]", border_style="bright_magenta", padding=(1, 1)))
 
     def cmd_link(self, args: str) -> None:
         path = args.strip()
         if not path:
-            default = Path(__file__).resolve().parents[2] / "demo" / "project" / "public-api-demo"
-            if default.is_dir():
-                path = str(default)
-            else:
-                _err("Usage: link <path>  (or just `link` if demo project exists)")
+            # Try default paths
+            for candidate in (
+                Path(__file__).resolve().parents[2] / "showcase" / "workspace" / "public-api",
+                Path(__file__).resolve().parents[2] / "demo" / "project" / "public-api-demo",
+            ):
+                if candidate.is_dir():
+                    path = str(candidate)
+                    break
+            if not path:
+                _err("Usage: link <path>  (no default workspace found — run prepare first)")
                 return
 
         resolved = Path(path).expanduser().resolve()
@@ -773,7 +982,6 @@ class RewindShell:
             return
 
         self.linked_project = str(resolved)
-        # Count files
         files = list(resolved.rglob("*"))
         file_count = sum(1 for f in files if f.is_file())
         doc_count = sum(1 for f in files if f.suffix == ".md")
@@ -782,7 +990,7 @@ class RewindShell:
             f"  [bold]Project[/bold]   {resolved.name}\n"
             f"  [bold]Path[/bold]      [dim]{resolved}[/dim]\n"
             f"  [bold]Files[/bold]     {file_count} files ({doc_count} docs)\n\n"
-            f"  This is the visual project context for the demo session.",
+            f"  Type [cyan]project[/cyan] to explore the workspace.",
             title="[bold green]Project Linked[/bold green]",
             border_style="green",
             padding=(1, 1),
@@ -797,13 +1005,8 @@ class RewindShell:
         if self.linked_project:
             lines.append(f"  [bold]Project[/bold]     [dim]{self.linked_project}[/dim]")
 
-        docs = Path(__file__).resolve().parents[2] / "docs" / "demo.md"
-        if docs.exists():
-            lines.append(f"  [bold]Demo Docs[/bold]   [dim]{docs}[/dim]")
-
         console.print(Panel("\n".join(lines), title="[bold]Quick Links[/bold]", border_style="cyan", padding=(1, 1)))
 
-        # Try to open browser on macOS
         if platform.system() == "Darwin":
             try:
                 subprocess.Popen(["open", BROWSER_URL], stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL)
@@ -827,6 +1030,7 @@ class RewindShell:
         st = self.api.status()
         branch = st.get("branch_name") or st.get("origin_branch") or "—"
         head = _short(st.get("head_commit_id"))
+        mode = st.get("mode", "unknown")
 
         try:
             resp = self.api.chat(message)
@@ -835,13 +1039,19 @@ class RewindShell:
             return
 
         text = resp.get("response", "")
-        mode = resp.get("response_mode", "live")
+        response_mode = resp.get("response_mode", "live")
         notice = resp.get("notice")
 
-        style = "blue" if mode == "live" else "yellow"
-        title = "Assistant" if mode == "live" else "Assistant (memory-grounded)"
+        style = "blue" if response_mode == "live" else "yellow"
+        title = "Assistant" if response_mode == "live" else "Assistant (memory-grounded)"
 
-        console.print(f"\n  [dim]{branch} @ {head}[/dim]" + (f"  [dim yellow]({mode})[/dim yellow]" if mode != "live" else ""))
+        context_tag = f"  [dim]{branch} @ {head}[/dim]"
+        if mode == "detached":
+            context_tag += "  [yellow]detached — historical snapshot[/yellow]"
+        elif response_mode != "live":
+            context_tag += f"  [dim yellow]({response_mode})[/dim yellow]"
+
+        console.print(f"\n{context_tag}")
         if notice:
             console.print(f"  [dim yellow]{notice}[/dim yellow]")
         console.print(Panel(Markdown(text), title=title, border_style=style, padding=(1, 2)))

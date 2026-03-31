@@ -546,7 +546,7 @@ def _chat_loop(ctx: typer.Context) -> None:
 
         assistant_text = response.get("response", "")
         response_mode = response.get("response_mode", "live")
-        title = "Assistant" if response_mode == "live" else "Memory-grounded demo fallback"
+        title = "Assistant" if response_mode == "live" else "Memory-grounded fallback"
         style = "blue" if response_mode == "live" else "yellow"
 
         if response.get("notice"):
@@ -585,7 +585,7 @@ def commit_cmd(
 
 @app.command("chat")
 def chat_cmd(ctx: typer.Context) -> None:
-    """Start the interactive RewindAI demo shell."""
+    """Start the interactive RewindAI shell."""
     from rewindai_cli.shell import run_shell
 
     api = _api_from_ctx(ctx)
@@ -628,13 +628,17 @@ def ask_cmd(
         console.print(f"[dim yellow]{response['notice']}[/dim yellow]")
 
 
-# ── Demo Commands ────────────────────────────────────────────────────────────
+# ── Showcase Commands ─────────────────────────────────────────────────────────
 
-demo_app = typer.Typer(help="Demo operator commands for RewindAI.", no_args_is_help=True)
-app.add_typer(demo_app, name="demo")
+showcase_app = typer.Typer(help="Presentation operator commands.", no_args_is_help=True)
+app.add_typer(showcase_app, name="showcase")
+
+# Hidden backward-compat alias
+_demo_alias = typer.Typer(help="Alias for showcase.", no_args_is_help=True, hidden=True)
+app.add_typer(_demo_alias, name="demo")
 
 BROWSER_URL = "http://localhost:5173"
-EXPECTED_BRANCHES = ("main", "graphql-exploration", "merged-demo")
+EXPECTED_BRANCHES = ("main", "graphql-exploration", "merged")
 
 
 def _check(label: str, passed: bool, detail: str = "") -> bool:
@@ -644,16 +648,31 @@ def _check(label: str, passed: bool, detail: str = "") -> bool:
     return passed
 
 
-@demo_app.command("prepare")
-def demo_prepare(ctx: typer.Context) -> None:
-    """Reset demo data to known-good state and verify readiness."""
+def _find_merged_branch(api: RewindApi) -> str:
+    """Find the merged branch name — handles both 'merged' and legacy 'merged-demo'."""
+    try:
+        branches = api.branches()
+        names = {b["name"] for b in branches}
+        if "merged" in names:
+            return "merged"
+        if "merged-demo" in names:
+            return "merged-demo"
+    except ApiError:
+        pass
+    return "merged"
+
+
+@showcase_app.command("prepare")
+@_demo_alias.command("prepare", hidden=True)
+def showcase_prepare(ctx: typer.Context) -> None:
+    """Reset data to known-good state and verify readiness."""
     import subprocess
     import sys
     from pathlib import Path
 
     api = _api_from_ctx(ctx)
 
-    console.print(Panel("[bold]RewindAI Demo Prepare[/bold]\n\nResetting to known-good demo state...", border_style="cyan"))
+    console.print(Panel("[bold]RewindAI Prepare[/bold]\n\nResetting to known-good state...", border_style="cyan"))
 
     # 1. Health check
     try:
@@ -667,8 +686,8 @@ def demo_prepare(ctx: typer.Context) -> None:
     except ApiError as exc:
         _fail(f"Cannot reach backend: {exc}\n  Start with: cd backend && uvicorn app.main:app --reload")
 
-    # 2. Run seed_demo.py --verify
-    console.print("  [dim]...[/dim]   Running seed + verify (this resets all demo data)...")
+    # 2. Run seed script
+    console.print("  [dim]...[/dim]   Running seed + verify (this resets all data)...")
     scripts_dir = Path(__file__).resolve().parents[2] / "scripts"
     seed_script = scripts_dir / "seed_demo.py"
     if not seed_script.exists():
@@ -683,7 +702,7 @@ def demo_prepare(ctx: typer.Context) -> None:
     if result.returncode != 0:
         console.print(f"[red]Seed script failed:[/red]\n{result.stderr or result.stdout}")
         raise typer.Exit(code=1)
-    console.print("  [green]PASS[/green]  Demo data seeded and verified")
+    console.print("  [green]PASS[/green]  Data seeded and verified")
 
     # 3. Ensure workspace on main
     try:
@@ -692,31 +711,34 @@ def demo_prepare(ctx: typer.Context) -> None:
     except ApiError:
         pass
 
-    # 4. Regenerate demo project folder
-    _regenerate_demo_project()
-    console.print("  [green]PASS[/green]  Demo project folder created")
+    # 4. Regenerate project workspace
+    _regenerate_showcase_workspace()
+    console.print("  [green]PASS[/green]  Project workspace created")
 
     console.print()
     console.print(Panel(
-        "[bold green]Demo prepared.[/bold green]\n\n"
+        "[bold green]Ready.[/bold green]\n\n"
         "Next steps:\n"
-        "  [cyan]rewind demo verify[/cyan]     — smoke-test all endpoints\n"
-        "  [cyan]rewind demo safe[/cyan]       — set up the safe demo path\n"
-        "  [cyan]rewind demo live[/cyan]       — set up the live interactive path\n"
-        "  [cyan]rewind demo script[/cyan]     — print the presenter script",
+        "  [cyan]rewind showcase verify[/cyan]   — smoke-test all endpoints\n"
+        "  [cyan]rewind showcase ready[/cyan]    — set up safe starting state\n"
+        "  [cyan]rewind showcase live[/cyan]     — set up interactive flow\n"
+        "  [cyan]rewind showcase script[/cyan]   — print the presenter script\n\n"
+        f"  [cyan]rewind --user {api.user_id} chat[/cyan]    — launch the interactive shell",
         border_style="green",
-        title="Ready",
+        title="Prepared",
     ))
 
 
-@demo_app.command("verify")
-def demo_verify(ctx: typer.Context) -> None:
-    """Smoke-test every demo-critical endpoint."""
+@showcase_app.command("verify")
+@_demo_alias.command("verify", hidden=True)
+def showcase_verify(ctx: typer.Context) -> None:
+    """Smoke-test every critical endpoint."""
     api = _api_from_ctx(ctx)
     passed = 0
     total = 0
+    merged = _find_merged_branch(api)
 
-    console.print(Panel("[bold]RewindAI Demo Verify[/bold]", border_style="cyan"))
+    console.print(Panel("[bold]System Verify[/bold]", border_style="cyan"))
 
     # Health
     total += 1
@@ -742,7 +764,8 @@ def demo_verify(ctx: typer.Context) -> None:
     try:
         branches = api.branches()
         names = {b["name"] for b in branches}
-        all_present = all(b in names for b in EXPECTED_BRANCHES)
+        merged_ok = "merged" in names or "merged-demo" in names
+        all_present = "main" in names and "graphql-exploration" in names and merged_ok
         if _check("Expected branches exist", all_present, ", ".join(sorted(names))):
             passed += 1
     except ApiError as exc:
@@ -771,22 +794,22 @@ def demo_verify(ctx: typer.Context) -> None:
     # Commit snapshot
     total += 1
     try:
-        timeline = api.timeline("merged-demo")
+        timeline = api.timeline(merged)
         if timeline:
             commit_id = timeline[-1]["commit"]["id"]
             snapshot = api.commit_snapshot(commit_id)
             mem_count = snapshot.get("active_memory_count", 0)
-            if _check("Commit snapshot inspector", mem_count > 0, f"{mem_count} memories at HEAD"):
+            if _check("Commit snapshot", mem_count > 0, f"{mem_count} memories at HEAD"):
                 passed += 1
         else:
-            _check("Commit snapshot inspector", False, "no commits on merged-demo")
+            _check("Commit snapshot", False, f"no commits on {merged}")
     except ApiError as exc:
-        _check("Commit snapshot inspector", False, str(exc))
+        _check("Commit snapshot", False, str(exc))
 
     # Graph
     total += 1
     try:
-        graph = api.graph_branch("merged-demo")
+        graph = api.graph_branch(merged)
         node_count = len(graph.get("nodes", []))
         if _check("Graph branch fetch", node_count > 0, f"{node_count} nodes"):
             passed += 1
@@ -796,7 +819,7 @@ def demo_verify(ctx: typer.Context) -> None:
     # Chat
     total += 1
     try:
-        api.attach_branch("merged-demo", reuse_session=False)
+        api.attach_branch(merged, reuse_session=False)
         chat_resp = api.chat("What API direction did we land on?")
         mode = chat_resp.get("response_mode", "unknown")
         has_response = bool(chat_resp.get("response"))
@@ -811,52 +834,54 @@ def demo_verify(ctx: typer.Context) -> None:
     console.print(Panel(
         f"[bold]{passed}/{total} checks passed[/bold]",
         border_style=color,
-        title="Verify Result",
+        title="Result",
     ))
     if passed < total:
         raise typer.Exit(code=1)
 
 
-@demo_app.command("safe")
-def demo_safe(ctx: typer.Context) -> None:
-    """Set up the safe (pre-merged) demo path."""
+@showcase_app.command("ready")
+@_demo_alias.command("safe", hidden=True)
+def showcase_ready(ctx: typer.Context) -> None:
+    """Set up the safe starting state for presentation."""
     api = _api_from_ctx(ctx)
+    merged = _find_merged_branch(api)
 
-    console.print(Panel("[bold]RewindAI Safe Demo[/bold]\n\nAttaching to the pre-merged branch...", border_style="cyan"))
+    console.print(Panel("[bold]RewindAI Ready[/bold]\n\nAttaching to the pre-merged branch...", border_style="cyan"))
 
     try:
-        api.attach_branch("merged-demo", reuse_session=False)
+        api.attach_branch(merged, reuse_session=False)
         status_payload = api.status()
     except ApiError as exc:
-        _fail(f"Failed to attach merged-demo: {exc}")
+        _fail(f"Failed to attach {merged}: {exc}")
 
     _print_status(status_payload)
 
     console.print()
     console.print(Panel(
-        f"[bold green]Safe demo ready.[/bold green]\n\n"
+        f"[bold green]Ready to present.[/bold green]\n\n"
         f"[bold]Browser:[/bold] {BROWSER_URL}\n\n"
         "[bold]Recommended flow:[/bold]\n"
         "  1. Open the browser\n"
-        "  2. [cyan]Graph tab[/cyan] — show the merge diamond in the DAG\n"
+        "  2. [cyan]Graph tab[/cyan] — merge diamond in the DAG\n"
         "  3. [cyan]Diff tab[/cyan] — compare main vs graphql-exploration\n"
-        "  4. [cyan]Timeline[/cyan] — click the merge commit, inspect AI memory snapshot\n"
+        "  4. [cyan]Timeline[/cyan] — click the merge commit, inspect snapshot\n"
         "  5. [cyan]Chat tab[/cyan] — ask: \"What API direction did we land on?\"\n\n"
-        "[bold]CLI quick demo:[/bold]\n"
-        f"  rewind --user {api.user_id} ask \"What API direction did we land on?\"\n"
-        f"  rewind --user {api.user_id} log\n"
-        f"  rewind --user {api.user_id} diff main graphql-exploration",
+        "[bold]Shell (recommended):[/bold]\n"
+        f"  rewind --user {api.user_id} chat\n"
+        "  Then: [cyan]guide[/cyan] inside the shell for step-by-step flow",
         border_style="green",
         title="Go Time",
     ))
 
 
-@demo_app.command("live")
-def demo_live(ctx: typer.Context) -> None:
-    """Set up the live interactive demo path."""
+@showcase_app.command("live")
+@_demo_alias.command("live", hidden=True)
+def showcase_live(ctx: typer.Context) -> None:
+    """Set up the interactive merge flow."""
     api = _api_from_ctx(ctx)
 
-    console.print(Panel("[bold]RewindAI Live Demo[/bold]\n\nAttaching to main for interactive merge flow...", border_style="cyan"))
+    console.print(Panel("[bold]RewindAI Live[/bold]\n\nAttaching to main for interactive flow...", border_style="cyan"))
 
     try:
         api.attach_branch("main", reuse_session=False)
@@ -868,189 +893,358 @@ def demo_live(ctx: typer.Context) -> None:
 
     console.print()
     console.print(Panel(
-        f"[bold green]Live demo ready.[/bold green]\n\n"
+        f"[bold green]Live mode ready.[/bold green]\n\n"
         f"[bold]Browser:[/bold] {BROWSER_URL}\n\n"
-        "[bold]Recommended flow:[/bold]\n"
-        f"  1. rewind --user {api.user_id} status\n"
-        f"  2. rewind --user {api.user_id} log\n"
-        f"  3. rewind --user {api.user_id} diff main graphql-exploration\n"
-        f"  4. rewind --user {api.user_id} merge graphql-exploration --strategy manual\n"
-        "     Suggested resolution: \"Use REST for public APIs and GraphQL for internal graph-heavy workflows.\"\n"
-        "  5. Open browser — show merge diamond in the Graph tab\n"
-        f"  6. rewind --user {api.user_id} ask \"What API direction did we land on?\"\n\n"
-        "[bold]Fallback:[/bold] If merge fails, run [cyan]rewind demo safe[/cyan] to switch to pre-merged branch.",
+        "[bold]Shell (recommended):[/bold]\n"
+        f"  rewind --user {api.user_id} chat\n\n"
+        "[bold]Recommended flow inside the shell:[/bold]\n"
+        "  [cyan]status[/cyan]  →  [cyan]branches[/cyan]  →  [cyan]diff main graphql-exploration[/cyan]\n"
+        f"  [cyan]merge graphql-exploration --strategy manual[/cyan]\n"
+        "  Resolution: \"Use REST for public APIs and GraphQL for internal graph-heavy workflows.\"\n\n"
+        "[bold]Fallback:[/bold] Run [cyan]rewind showcase ready[/cyan] to switch to the pre-merged branch.",
         border_style="green",
         title="Go Time",
     ))
 
 
-@demo_app.command("script")
-def demo_script(ctx: typer.Context) -> None:
-    """Print the full presenter script for safe and live demos."""
+@showcase_app.command("script")
+@_demo_alias.command("script", hidden=True)
+def showcase_script(ctx: typer.Context) -> None:
+    """Print the full presenter script."""
     api = _api_from_ctx(ctx)
     user = api.user_id
+    merged = _find_merged_branch(api)
 
     script = f"""
-[bold cyan]═══ 90-Second Safe Demo Script ═══[/bold cyan]
+[bold cyan]═══ 90-Second Presentation ═══[/bold cyan]
 
-[bold]Setup:[/bold] rewind --user {user} demo prepare && rewind --user {user} demo safe
+[bold]Setup:[/bold] rewind --user {user} showcase prepare && rewind --user {user} showcase ready
 
-[bold]Step 1 — Status[/bold]
-  [cyan]rewind --user {user} status[/cyan]
-  Say: "RewindAI gives AI a real workspace HEAD — we always know exactly what memory state the model is operating from."
+[bold]Step 1 — Shell + Status[/bold]
+  [cyan]rewind --user {user} chat[/cyan]
+  Inside the shell: [cyan]status[/cyan]
+  Say: "RewindAI gives AI a real workspace HEAD — we always know the exact memory state."
 
-[bold]Step 2 — Browser: Graph[/bold]
-  Open {BROWSER_URL}, Graph tab on merged-demo
-  Say: "This is the team's cognitive timeline as a graph. That diamond is a merge commit — two thinking paths joined."
+[bold]Step 2 — Branches + Diff[/bold]
+  [cyan]branches[/cyan]
+  [cyan]diff main graphql-exploration[/cyan]
+  Say: "Two different memory timelines — one chose REST, the other explored GraphQL."
 
-[bold]Step 3 — Browser: Diff[/bold]
-  Switch to Diff tab, main vs graphql-exploration
-  Say: "These are two different memory timelines — one chose REST, the other explored GraphQL."
+[bold]Step 3 — Timeline + Snapshot[/bold]
+  [cyan]timeline[/cyan]
+  [cyan]snapshot HEAD[/cyan]
+  Say: "Every commit is an AI memory snapshot. Inspect what the agent knew — grouped by type."
 
-[bold]Step 4 — Browser: Snapshot Inspector[/bold]
-  Click the merge commit in the Timeline sidebar
-  Say: "Every commit is a snapshot. Click it and you see exactly what the AI knew at that point — grouped by type."
+[bold]Step 4 — Ask[/bold]
+  [cyan]ask What API direction did we land on?[/cyan]
+  Say: "The answer is grounded in merged team knowledge, not raw chat."
 
-[bold]Step 5 — Chat[/bold]
-  [cyan]rewind --user {user} ask "What API direction did we land on?"[/cyan]
-  Say: "The answer is grounded in the merged memory — not raw chat history, but versioned team knowledge."
+[bold]Step 5 — Time-Travel[/bold]
+  [cyan]rewind <early-commit-id>[/cyan]
+  [cyan]ask What did we decide about the API?[/cyan]
+  Say: "The AI only knows what existed at that point. Historical isolation is provable."
+  [cyan]back[/cyan]
 
-[bold]Step 6 — Rewind (Optional)[/bold]
-  Click "Rewind chat to this snapshot" on an earlier commit
-  Ask: "What did we decide about the API?"
-  Say: "The AI only knows what existed at that point. It doesn't know about later decisions."
+[bold cyan]═══ 2-Minute Presentation ═══[/bold cyan]
 
-[bold cyan]═══ 2-Minute Live Demo Script ═══[/bold cyan]
+[bold]Setup:[/bold] rewind --user {user} showcase prepare && rewind --user {user} showcase live
 
-[bold]Setup:[/bold] rewind --user {user} demo prepare && rewind --user {user} demo live
+[bold]Step 1 — Workspace[/bold]
+  [cyan]status[/cyan]  →  [cyan]branches[/cyan]  →  [cyan]log[/cyan]
+  Say: "RewindAI tracks AI memory like Git tracks code."
 
-[bold]Step 1 — Status + Log[/bold]
-  [cyan]rewind --user {user} status[/cyan]
-  [cyan]rewind --user {user} log[/cyan]
-  Say: "RewindAI tracks AI memory like Git tracks code. Commits, branches, history."
+[bold]Step 2 — Divergence[/bold]
+  [cyan]diff main graphql-exploration[/cyan]
+  Say: "Alice chose REST. Bob explored GraphQL. Divergent memory timelines."
 
-[bold]Step 2 — Diff[/bold]
-  [cyan]rewind --user {user} diff main graphql-exploration[/cyan]
-  Say: "Alice's team chose REST. Bob explored GraphQL. These are divergent memory timelines."
+[bold]Step 3 — Merge[/bold]
+  Merge via CLI or show existing merge in shell.
+  Say: "Merging AI memory — resolving cognitive conflicts like code conflicts."
 
-[bold]Step 3 — Live Merge[/bold]
-  [cyan]rewind --user {user} merge graphql-exploration --strategy manual[/cyan]
-  Resolution: "Use REST for public APIs and GraphQL for internal graph-heavy workflows."
-  Say: "We're merging AI memory — resolving cognitive conflicts just like code conflicts."
+[bold]Step 4 — Agent State[/bold]
+  [cyan]snapshot HEAD[/cyan]  →  [cyan]project[/cyan]
+  Say: "The full agent state at this point — decisions, facts, open questions."
 
-[bold]Step 4 — Browser Graph[/bold]
-  Open {BROWSER_URL}, refresh Graph tab
-  Say: "The merged cognitive timeline, with a diamond merge commit connecting both paths."
+[bold]Step 5 — Time-Travel[/bold]
+  [cyan]rewind <commit>[/cyan]  →  [cyan]context[/cyan]
+  [cyan]ask What did we decide?[/cyan]
+  Say: "The AI doesn't know about later decisions. Time-travel is real."
+  [cyan]back[/cyan]  →  [cyan]ask What API direction did we land on?[/cyan]
+  Say: "Now it knows. This is Git for AI memory."
 
-[bold]Step 5 — Ask[/bold]
-  [cyan]rewind --user {user} ask "What API direction did we land on?"[/cyan]
-  Say: "The answer synthesizes both timelines. This is what Git for AI memory means."
+[bold cyan]═══ Recovery ═══[/bold cyan]
 
-[bold cyan]═══ Rescue Path ═══[/bold cyan]
-
-If anything breaks during the live demo:
-  [cyan]rewind --user {user} demo safe[/cyan]
-This switches to the pre-merged branch instantly. Continue from Step 4 of the safe script.
+If anything breaks:
+  [cyan]use {merged}[/cyan]          — inside the shell
+  [cyan]rewind showcase ready[/cyan]  — from the CLI
 """
-    console.print(Panel(script.strip(), title="Presenter Script", border_style="cyan", padding=(1, 2)))
+    console.print(Panel(script.strip(), title="Presenter Script", border_style="bright_magenta", padding=(1, 2)))
 
 
-@demo_app.command("reset")
-def demo_reset(ctx: typer.Context) -> None:
-    """Alias for `demo prepare` — reset to known-good state."""
-    demo_prepare(ctx)
+@showcase_app.command("reset")
+@_demo_alias.command("reset", hidden=True)
+def showcase_reset(ctx: typer.Context) -> None:
+    """Alias for prepare — reset to known-good state."""
+    showcase_prepare(ctx)
 
 
-def _regenerate_demo_project() -> None:
-    """Create or refresh the demo/project/public-api-demo/ folder."""
+def _regenerate_showcase_workspace() -> None:
+    """Create or refresh the showcase/workspace/public-api/ folder."""
     from pathlib import Path
 
     project_root = Path(__file__).resolve().parents[2]
-    demo_dir = project_root / "demo" / "project" / "public-api-demo"
-    demo_dir.mkdir(parents=True, exist_ok=True)
+    ws = project_root / "showcase" / "workspace" / "public-api"
+    ws.mkdir(parents=True, exist_ok=True)
 
-    (demo_dir / "README.md").write_text(
-        "# Public API Design — RewindAI Demo Project\n\n"
-        "This folder represents the team's API design decisions tracked by RewindAI.\n\n"
+    # ── README ──
+    (ws / "README.md").write_text(
+        "# Public API Service\n\n"
+        "Team workspace for the public API design — tracked by RewindAI.\n\n"
+        "## Team\n\n"
+        "- **Alice Chen** — Backend lead, REST advocate\n"
+        "- **Bob Kumar** — API specialist, GraphQL exploration\n\n"
         "## Branches\n\n"
-        "- **main** — REST-first public API direction (Alice)\n"
-        "- **graphql-exploration** — GraphQL alternative exploration (Bob)\n"
-        "- **merged-demo** — Merged outcome combining both approaches\n\n"
-        "## Key Decision\n\n"
-        "Use REST for public APIs and GraphQL for internal graph-heavy workflows.\n\n"
-        "## How RewindAI Tracks This\n\n"
-        "Every decision, fact, and open question is stored as a versioned memory node "
-        "in a Neo4j graph. Branches allow parallel exploration. Merging combines knowledge "
-        "with conflict resolution — just like Git merges code.\n"
+        "| Branch | Direction | Owner |\n"
+        "|--------|-----------|-------|\n"
+        "| `main` | REST-first public API | Alice |\n"
+        "| `graphql-exploration` | GraphQL alternative | Bob |\n"
+        "| `merged` | Combined resolution | Team |\n\n"
+        "## Resolution\n\n"
+        "**REST for public APIs, GraphQL for internal graph-heavy workflows.**\n\n"
+        "Every decision, fact, and question is stored as a versioned memory node in the\n"
+        "knowledge graph. Branches allow parallel exploration. Merging combines knowledge\n"
+        "with conflict resolution — like Git merges code.\n"
     )
 
-    docs_dir = demo_dir / "docs"
-    docs_dir.mkdir(exist_ok=True)
+    # ── .gitignore ──
+    (ws / ".gitignore").write_text(
+        "__pycache__/\n*.pyc\n.env\n.venv/\nnode_modules/\n*.log\n.DS_Store\n"
+    )
 
-    (docs_dir / "architecture.md").write_text(
+    # ── requirements.txt ──
+    (ws / "requirements.txt").write_text(
+        "fastapi==0.115.0\nuvicorn[standard]==0.30.0\nhttpx==0.27.0\npydantic==2.9.0\nneo4j==5.25.0\n"
+    )
+
+    # ── docs/ ──
+    docs = ws / "docs"
+    docs.mkdir(exist_ok=True)
+
+    (docs / "architecture.md").write_text(
         "# Architecture Kickoff\n\n"
-        "RewindAI needs a versioned API surface that works for both the browser demo and the CLI.\n\n"
+        "The team needs a versioned API surface for both the browser app and the CLI.\n\n"
         "## Context\n\n"
-        "- Team members: Alice Chen (backend lead), Bob Kumar (API specialist)\n"
-        "- Requirements: browser-friendly, CLI-compatible, graph-query capable\n"
-        "- Timeline: MVP in 8 hours, stretch goals over 2-3 days\n"
+        "- **Team:** Alice Chen (backend lead), Bob Kumar (API specialist)\n"
+        "- **Requirements:** Browser-friendly, CLI-compatible, graph-query capable\n"
+        "- **Timeline:** MVP phase, then stretch goals\n\n"
+        "## Open Questions\n\n"
+        "- REST vs GraphQL for the public API surface?\n"
+        "- How to handle graph-heavy queries efficiently?\n"
+        "- Pagination strategy for timeline endpoints?\n"
     )
 
-    (docs_dir / "rest_direction.md").write_text(
+    (docs / "rest_direction.md").write_text(
         "# REST API Direction (main branch)\n\n"
-        "**Decision:** Use REST for the public application API so the browser demo and CLI share stable endpoints.\n\n"
+        "**Decision:** Use REST for the public application API.\n\n"
         "**Author:** Alice Chen\n\n"
         "## Rationale\n\n"
-        "- REST is well-understood by judges and demo audiences\n"
+        "- REST is well-understood by consumers and integration partners\n"
         "- Stable endpoint contracts for both browser and CLI clients\n"
-        "- JWT auth protects private write routes used by the team workspace\n\n"
+        "- JWT auth protects private write routes\n\n"
         "## Supporting Facts\n\n"
-        "- Redis caching keeps graph and timeline reads fast enough for the live demo\n"
-        "- Cursor-light pagination is acceptable for the first demo cut\n"
+        "- Redis caching keeps reads fast for timeline and graph endpoints\n"
+        "- Cursor-based pagination is acceptable for the initial release\n"
+        "- OpenAPI spec auto-generated from Pydantic models\n"
     )
 
-    (docs_dir / "graphql_exploration.md").write_text(
+    (docs / "graphql_exploration.md").write_text(
         "# GraphQL Exploration (graphql-exploration branch)\n\n"
-        "**Decision:** Use GraphQL for the public application API to support flexible graph-heavy queries.\n\n"
+        "**Decision:** Use GraphQL for the public API to support flexible queries.\n\n"
         "**Author:** Bob Kumar\n\n"
         "## Rationale\n\n"
-        "- Graph data naturally maps to GraphQL's nested query model\n"
-        "- Schema stitching can simplify partner integrations without duplicating resolver logic\n"
-        "- Flexible queries reduce the number of endpoints needed\n\n"
+        "- Graph data maps naturally to GraphQL's nested query model\n"
+        "- Schema stitching simplifies partner integrations\n"
+        "- Flexible queries reduce the number of endpoints\n\n"
         "## Action Items\n\n"
         "- Evaluate Apollo federation after the merge decision lands\n"
+        "- Benchmark query complexity limits for production\n"
     )
 
-    (docs_dir / "merged_decision.md").write_text(
-        "# Merged Decision (merged-demo branch)\n\n"
-        "**Resolution:** Use REST for public APIs and GraphQL for internal graph-heavy workflows.\n\n"
+    (docs / "merged_decision.md").write_text(
+        "# Merged Decision (merged branch)\n\n"
+        "**Resolution:** REST for public APIs, GraphQL for internal graph-heavy workflows.\n\n"
         "## How We Got Here\n\n"
-        "1. Alice's main branch advocated REST for stability and demo clarity\n"
-        "2. Bob's graphql-exploration branch explored GraphQL for flexible graph queries\n"
-        "3. The team merged both perspectives, keeping REST for external consumers\n"
-        "   and GraphQL for internal graph-heavy workflows\n\n"
+        "1. Alice's main branch advocated REST for stability and broad compatibility\n"
+        "2. Bob's branch explored GraphQL for flexible graph queries\n"
+        "3. The team merged both: REST externally, GraphQL internally\n\n"
         "## What This Demonstrates\n\n"
-        "RewindAI's merge resolved a genuine cognitive conflict between two API philosophies,\n"
-        "creating a decision that synthesizes both viewpoints — exactly like merging code branches.\n"
+        "A genuine cognitive conflict between two API philosophies, resolved by\n"
+        "synthesizing both viewpoints — exactly like merging code branches.\n"
     )
 
-    src_dir = demo_dir / "src"
-    (src_dir / "api").mkdir(parents=True, exist_ok=True)
-    (src_dir / "graphql").mkdir(parents=True, exist_ok=True)
+    (docs / "team_notes.md").write_text(
+        "# Team Notes\n\n"
+        "## Decision Log\n\n"
+        "| Date | Decision | Author | Branch |\n"
+        "|------|----------|--------|--------|\n"
+        "| Sprint 1 | Architecture kickoff | Alice | main |\n"
+        "| Sprint 1 | REST for public API | Alice | main |\n"
+        "| Sprint 1 | GraphQL exploration | Bob | graphql-exploration |\n"
+        "| Sprint 2 | Merged: REST public + GraphQL internal | Team | merged |\n\n"
+        "## Open Items\n\n"
+        "- [ ] Apollo federation evaluation\n"
+        "- [ ] Rate limiting strategy for public endpoints\n"
+        "- [ ] Schema versioning approach\n"
+    )
 
-    (src_dir / "api" / "routes.py").write_text(
+    # ── src/api/ ──
+    api_dir = ws / "src" / "api"
+    api_dir.mkdir(parents=True, exist_ok=True)
+
+    (api_dir / "__init__.py").write_text("")
+
+    (api_dir / "routes.py").write_text(
         '"""REST API routes — public-facing endpoints."""\n\n'
-        "# GET  /api/v1/memories     — list versioned memories\n"
-        "# GET  /api/v1/branches     — list branches\n"
-        "# GET  /api/v1/timeline/:b  — commit timeline\n"
-        "# POST /api/v1/diff         — compare branches\n"
-        "# POST /api/v1/chat         — send a message\n"
+        "from fastapi import APIRouter, Depends, Query\n\n"
+        "router = APIRouter(prefix=\"/api/v1\")\n\n\n"
+        "@router.get(\"/memories\")\n"
+        "async def list_memories(branch_name: str = Query(\"main\")):\n"
+        '    """List versioned memories on a branch."""\n'
+        "    ...\n\n\n"
+        "@router.get(\"/branches\")\n"
+        "async def list_branches():\n"
+        '    """List all branches in the knowledge graph."""\n'
+        "    ...\n\n\n"
+        "@router.get(\"/timeline/{branch}\")\n"
+        "async def get_timeline(branch: str):\n"
+        '    """Commit timeline for a branch."""\n'
+        "    ...\n\n\n"
+        "@router.post(\"/diff\")\n"
+        "async def diff_branches(ref_a: str, ref_b: str):\n"
+        '    """Compare memories between two branches."""\n'
+        "    ...\n\n\n"
+        "@router.post(\"/chat\")\n"
+        "async def chat(message: str, user_id: str):\n"
+        '    """Send a message grounded in versioned memory."""\n'
+        "    ...\n"
     )
 
-    (src_dir / "graphql" / "schema.py").write_text(
+    (api_dir / "middleware.py").write_text(
+        '"""API middleware — CORS, auth, request logging."""\n\n'
+        "from fastapi import Request\n"
+        "from starlette.middleware.base import BaseHTTPMiddleware\n\n\n"
+        "class RequestLogger(BaseHTTPMiddleware):\n"
+        "    async def dispatch(self, request: Request, call_next):\n"
+        "        response = await call_next(request)\n"
+        "        return response\n"
+    )
+
+    # ── src/graphql/ ──
+    gql_dir = ws / "src" / "graphql"
+    gql_dir.mkdir(parents=True, exist_ok=True)
+
+    (gql_dir / "__init__.py").write_text("")
+
+    (gql_dir / "schema.py").write_text(
         '"""GraphQL schema — internal graph-heavy queries."""\n\n'
-        "# type Memory { id, type, content, tags, branch, createdAt }\n"
-        "# type Branch { name, headCommit, branchedFrom }\n"
-        "# type Commit { id, message, parents, memories }\n"
-        "# query neighborhood(id) -> [Memory | Commit | Branch]\n"
+        "# Used for internal workflows where flexible nested queries\n"
+        "# outperform fixed REST endpoints.\n\n"
+        "SCHEMA = \"\"\"\n"
+        "type Memory {\n"
+        "    id: ID!\n"
+        "    type: String!\n"
+        "    content: String!\n"
+        "    tags: [String!]!\n"
+        "    branch: String!\n"
+        "    createdAt: DateTime!\n"
+        "}\n\n"
+        "type Branch {\n"
+        "    name: String!\n"
+        "    headCommit: Commit\n"
+        "    branchedFrom: Commit\n"
+        "}\n\n"
+        "type Commit {\n"
+        "    id: ID!\n"
+        "    message: String!\n"
+        "    parents: [Commit!]!\n"
+        "    memories: [Memory!]!\n"
+        "}\n\n"
+        "type Query {\n"
+        "    memories(branch: String!, type: String): [Memory!]!\n"
+        "    branches: [Branch!]!\n"
+        "    neighborhood(id: ID!): [Node!]!\n"
+        "}\n"
+        "\"\"\"\n"
+    )
+
+    (gql_dir / "resolvers.py").write_text(
+        '"""GraphQL resolvers for internal graph queries."""\n\n\n'
+        "async def resolve_memories(branch: str, type_filter: str | None = None):\n"
+        '    """Fetch memories from the knowledge graph."""\n'
+        "    ...\n\n\n"
+        "async def resolve_neighborhood(node_id: str):\n"
+        '    """Get connected nodes for graph visualization."""\n'
+        "    ...\n"
+    )
+
+    # ── src/services/ ──
+    svc_dir = ws / "src" / "services"
+    svc_dir.mkdir(parents=True, exist_ok=True)
+
+    (svc_dir / "__init__.py").write_text("")
+
+    (svc_dir / "memory_service.py").write_text(
+        '"""Memory service — versioned knowledge graph operations."""\n\n'
+        "from dataclasses import dataclass\n\n\n"
+        "@dataclass\n"
+        "class MemoryService:\n"
+        '    """Manages versioned memories in the knowledge graph."""\n\n'
+        "    async def get_memories_at_commit(self, commit_id: str):\n"
+        '        """Temporal query: memories active at a specific commit."""\n'
+        "        ...\n\n"
+        "    async def diff_branches(self, branch_a: str, branch_b: str):\n"
+        '        """Compare memory states between two branches."""\n'
+        "        ...\n\n"
+        "    async def merge_branches(self, source: str, target: str):\n"
+        '        """Merge memories with conflict detection."""\n'
+        "        ...\n"
+    )
+
+    # ── src/config/ ──
+    cfg_dir = ws / "src" / "config"
+    cfg_dir.mkdir(parents=True, exist_ok=True)
+
+    (cfg_dir / "__init__.py").write_text("")
+
+    (cfg_dir / "settings.py").write_text(
+        '"""Application settings."""\n\n'
+        "from pydantic_settings import BaseSettings\n\n\n"
+        "class Settings(BaseSettings):\n"
+        "    neo4j_uri: str = \"bolt://localhost:7687\"\n"
+        "    neo4j_user: str = \"neo4j\"\n"
+        "    neo4j_password: str = \"rewindai\"\n"
+        "    anthropic_api_key: str = \"\"\n"
+        "    compaction_threshold: int = 5000\n\n"
+        "    class Config:\n"
+        "        env_file = \".env\"\n"
+    )
+
+    # ── tests/ ──
+    tests_dir = ws / "tests"
+    tests_dir.mkdir(exist_ok=True)
+
+    (tests_dir / "__init__.py").write_text("")
+
+    (tests_dir / "test_api.py").write_text(
+        '"""API endpoint tests."""\n\n'
+        "import pytest\n\n\n"
+        "def test_list_branches():\n"
+        '    """Verify branch listing returns expected branches."""\n'
+        "    ...\n\n\n"
+        "def test_diff_shows_divergence():\n"
+        '    """Verify diff between main and graphql-exploration shows differences."""\n'
+        "    ...\n\n\n"
+        "def test_timeline_has_commits():\n"
+        '    """Verify timeline returns at least one commit."""\n'
+        "    ...\n"
     )

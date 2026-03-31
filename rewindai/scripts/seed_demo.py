@@ -198,7 +198,7 @@ async def _seed_story(driver, *, api_url: str, user_id: str) -> dict[str, Any]:
 
     await create_branch(
         driver,
-        branch_name="merged-demo",
+        branch_name="merged",
         source_commit_id=main_head_commit["id"],
         user_id=user_id,
     )
@@ -208,7 +208,7 @@ async def _seed_story(driver, *, api_url: str, user_id: str) -> dict[str, Any]:
     _http_request_json(
         "POST",
         _api_url(api_url, "/api/v1/workspace/attach-branch"),
-        payload={"branch_name": "merged-demo", "user_id": user_id, "reuse_session": False},
+        payload={"branch_name": "merged", "user_id": user_id, "reuse_session": False},
     )
     preview = _http_request_json(
         "GET",
@@ -216,7 +216,7 @@ async def _seed_story(driver, *, api_url: str, user_id: str) -> dict[str, Any]:
             api_url,
             "/api/v1/workspace/merge-preview",
             source_branch="graphql-exploration",
-            target_branch="merged-demo",
+            target_branch="merged",
             user_id=user_id,
         ),
     )
@@ -231,7 +231,7 @@ async def _seed_story(driver, *, api_url: str, user_id: str) -> dict[str, Any]:
         _api_url(api_url, "/api/v1/workspace/merge"),
         payload={
             "source_branch": "graphql-exploration",
-            "target_branch": "merged-demo",
+            "target_branch": "merged",
             "strategy": "manual",
             "user_id": user_id,
             "resolutions": [
@@ -291,7 +291,7 @@ def verify_demo_state(*, api_url: str, user_id: str) -> None:
 
     branches = _http_request_json("GET", _api_url(api_url, "/api/v1/branches"))
     branch_lookup = {branch["name"]: branch for branch in branches}
-    for expected_branch in ("main", "graphql-exploration", "merged-demo"):
+    for expected_branch in ("main", "graphql-exploration", "merged"):
         _assert(expected_branch in branch_lookup, f"Expected branch '{expected_branch}' to exist.")
 
     preview = _http_request_json(
@@ -331,7 +331,7 @@ def verify_demo_state(*, api_url: str, user_id: str) -> None:
     _http_request_json(
         "POST",
         _api_url(api_url, "/api/v1/workspace/attach-branch"),
-        payload={"branch_name": "merged-demo", "user_id": user_id, "reuse_session": False},
+        payload={"branch_name": "merged", "user_id": user_id, "reuse_session": False},
     )
     merged_chat = _http_request_json(
         "POST",
@@ -370,7 +370,7 @@ async def async_main(args: argparse.Namespace) -> None:
         verify_demo_state(api_url=args.api_url, user_id=args.user_id)
 
     _print("Demo dataset ready.")
-    _print("Safe demo branch: merged-demo")
+    _print("Safe starting branch: merged")
     _print("Live interactive starting branch: main")
 
 
