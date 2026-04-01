@@ -70,6 +70,21 @@ export class ContextManager {
     return [...this.conversationMessages];
   }
 
+  /** Record a tool call summary so subsequent prompts know what tools were used. */
+  addToolSummary(toolName: string, input: string, result: string, isError: boolean): void {
+    const status = isError ? 'ERROR' : 'OK';
+    const truncResult = result.length > 200 ? result.slice(0, 200) + '...' : result;
+    const truncInput = input.length > 150 ? input.slice(0, 150) + '...' : input;
+    this.conversationMessages.push({
+      role: 'tool',
+      content: `[${toolName}](${status}) Input: ${truncInput} → ${truncResult}`,
+    });
+    // Keep conversation history bounded
+    if (this.conversationMessages.length > 100) {
+      this.conversationMessages = this.conversationMessages.slice(-80);
+    }
+  }
+
   /** Add a note to the scratchpad (key decisions, important context) */
   addToScratchpad(note: string): void {
     this.scratchpad.push(`[${new Date().toISOString().slice(11, 19)}] ${note}`);

@@ -26,9 +26,23 @@ export interface AgentEvent {
 
 export type AgentEventHandler = (event: AgentEvent) => void;
 
-const BASE_SYSTEM_PROMPT = `You are RewindAI — an AI coding assistant running inside a VS Code extension. You have version-controlled memory: your conversation context is automatically saved when the developer commits code, and restored when they checkout a previous commit.
+const BASE_SYSTEM_PROMPT = `You are RewindAI — an AI coding assistant running inside a VS Code extension. You have tools to read, write, edit files, run commands, and search the codebase.
 
-You can read, write, and edit files in the developer's project. You can run terminal commands. You can search across the codebase.
+═══════════════════════════════════════════
+CRITICAL RULE — ALWAYS USE TOOLS
+═══════════════════════════════════════════
+When the user asks you to create, write, build, implement, fix, update, or modify ANY code:
+→ You MUST use write_file or edit_file to make changes
+→ You MUST NOT just print code in your response
+→ WRONG: Showing code in a markdown block and saying "here's the code"
+→ RIGHT: Using write_file to create the file, then confirming what you did
+
+If the user says "create a file", "write a function", "add a component", "fix the bug", "implement X":
+1. Use write_file (new files) or edit_file (existing files) to make the change
+2. Then briefly explain what you did
+
+NEVER output code in markdown blocks as your answer. ALWAYS use tools to write/edit files.
+═══════════════════════════════════════════
 
 HOW TO WORK:
 1. ALWAYS read a file before editing it. Use read_file first.
@@ -38,18 +52,22 @@ HOW TO WORK:
 5. Break complex tasks into steps. Tell the user what you're doing at each step.
 6. If something fails, read the error and try a different approach.
 7. Be concise — the user reads your responses in a narrow panel.
+8. Use list_files to explore the project structure when unsure about paths.
+9. All file paths are relative to the workspace root (no leading slash).
 
 ABOUT YOUR MEMORY:
 - Your conversation history is tied to git commits
 - When the developer commits, everything we've discussed is saved
 - When they checkout a different commit, you remember what was discussed at THAT point
 - If restored context is provided below, use it for continuity
+- If previous conversation history is shown, use it — files mentioned there exist
 
 DO NOT:
 - Make changes without reading the file first
 - Run dangerous commands (rm -rf, etc.)
 - Guess at file contents — always read them
-- Write overly long responses`;
+- Write overly long responses
+- Output code in markdown blocks instead of using write_file/edit_file`;
 
 export class AgentLoop {
   private llmClient: LLMClient;
@@ -100,6 +118,30 @@ export class AgentLoop {
     const sessionContext = noteGen.buildContextFromSessions();
     if (sessionContext) {
       systemPrompt += '\n\n' + sessionContext;
+    }
+
+    // Load previous conversation history from ContextManager (persists across prompts)
+    const previousMessages = this.contextManager.getMessages();
+    if (this.conversationHistory.length === 0 && previousMessages.length > 0) {
+      // Build a condensed history so the LLM knows what happened in prior prompts
+      const historyText = previousMessages
+        .filter(m => m.role === 'user' || m.role === 'assistant' || m.role === 'tool')
+        .map(m => {
+          if (m.role === 'tool') { return `[Tool] ${m.content}`; }
+          return `[${m.role}]: ${m.content.slice(0, 300)}${m.content.length > 300 ? '...' : ''}`;
+        })
+        .join('\n');
+
+      if (historyText.length > 0) {
+        this.conversationHistory.push({
+          role: 'user',
+          content: `[Previous conversation history — use this for context, files mentioned here exist]\n${historyText}`,
+        });
+        this.conversationHistory.push({
+          role: 'assistant',
+          content: 'Understood. I have context from our previous conversation and will continue from where we left off.',
+        });
+      }
     }
 
     this.conversationHistory.push({ role: 'user', content: userMessage });
@@ -192,6 +234,14 @@ export class AgentLoop {
             content: result.content,
             is_error: result.is_error,
           });
+
+          // Record tool summary for cross-prompt persistence
+          this.contextManager.addToolSummary(
+            block.name,
+            JSON.stringify(block.input).slice(0, 200),
+            result.content.slice(0, 200),
+            result.is_error,
+          );
 
           if (block.name === 'write_file' || block.name === 'edit_file') {
             this.contextManager.addToScratchpad(`EDITED: ${block.input.path}`);

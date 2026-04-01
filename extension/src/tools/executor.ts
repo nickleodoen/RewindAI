@@ -157,15 +157,36 @@ export class ToolExecutor {
     }
   }
 
+  // ── Path resolution ──
+
+  /** Safely resolve a file path, stripping leading slashes and preventing traversal. */
+  private resolvePath(filePath: string): string {
+    // Strip leading slashes — LLMs sometimes produce absolute-looking paths
+    let cleaned = filePath.replace(/^\/+/, '');
+    // Normalize and join
+    const fullPath = path.join(this.workspaceRoot, cleaned);
+    // Prevent path traversal
+    if (!fullPath.startsWith(this.workspaceRoot)) {
+      throw new Error('Cannot access files outside the workspace.');
+    }
+    return fullPath;
+  }
+
   // ── Tool implementations ──
 
   private async readFile(filePath: string): Promise<string> {
-    const fullPath = path.resolve(this.workspaceRoot, filePath);
-    if (!fullPath.startsWith(this.workspaceRoot)) {
-      throw new Error('Cannot read files outside the workspace.');
-    }
+    const fullPath = this.resolvePath(filePath);
     if (!fs.existsSync(fullPath)) {
-      throw new Error(`File not found: ${filePath}`);
+      // Help the LLM find the right file by listing the parent directory
+      const parentDir = path.dirname(fullPath);
+      let hint = '';
+      if (fs.existsSync(parentDir)) {
+        try {
+          const siblings = fs.readdirSync(parentDir).slice(0, 20);
+          hint = `\nFiles in ${path.dirname(filePath) || '.'}:\n${siblings.join('\n')}`;
+        } catch { /* ignore */ }
+      }
+      throw new Error(`File not found: ${filePath}. Use list_files to check the correct path.${hint}`);
     }
     const stat = fs.statSync(fullPath);
     if (stat.isDirectory()) {
@@ -180,10 +201,7 @@ export class ToolExecutor {
   }
 
   private async writeFile(filePath: string, content: string): Promise<string> {
-    const fullPath = path.resolve(this.workspaceRoot, filePath);
-    if (!fullPath.startsWith(this.workspaceRoot)) {
-      throw new Error('Cannot write files outside the workspace.');
-    }
+    const fullPath = this.resolvePath(filePath);
     fs.mkdirSync(path.dirname(fullPath), { recursive: true });
     const existed = fs.existsSync(fullPath);
     fs.writeFileSync(fullPath, content, 'utf-8');
@@ -201,10 +219,7 @@ export class ToolExecutor {
   }
 
   private async editFile(filePath: string, oldText: string, newText: string): Promise<string> {
-    const fullPath = path.resolve(this.workspaceRoot, filePath);
-    if (!fullPath.startsWith(this.workspaceRoot)) {
-      throw new Error('Cannot edit files outside the workspace.');
-    }
+    const fullPath = this.resolvePath(filePath);
     if (!fs.existsSync(fullPath)) {
       throw new Error(`File not found: ${filePath}`);
     }
@@ -213,11 +228,12 @@ export class ToolExecutor {
     const index = content.indexOf(oldText);
     if (index === -1) {
       const lines = content.split('\n');
-      const preview = lines.slice(0, 20).join('\n');
+      const preview = lines.slice(0, 30).join('\n');
       throw new Error(
         `Could not find the exact text to replace in ${filePath}. ` +
-        `Make sure old_text matches character-for-character. ` +
-        `First 20 lines:\n${preview}`
+        `Make sure old_text matches character-for-character including whitespace and newlines. ` +
+        `Try using read_file first to see the exact content. ` +
+        `File has ${lines.length} lines. First 30 lines:\n${preview}`
       );
     }
 
@@ -273,10 +289,7 @@ export class ToolExecutor {
   }
 
   private async listFiles(dirPath: string, recursive: boolean): Promise<string> {
-    const fullPath = path.resolve(this.workspaceRoot, dirPath || '.');
-    if (!fullPath.startsWith(this.workspaceRoot)) {
-      throw new Error('Cannot list files outside the workspace.');
-    }
+    const fullPath = this.resolvePath(dirPath || '.');
     if (!fs.existsSync(fullPath)) {
       throw new Error(`Directory not found: ${dirPath || '.'}`);
     }
@@ -334,10 +347,7 @@ export class ToolExecutor {
   }
 
   private async deleteFile(filePath: string): Promise<string> {
-    const fullPath = path.resolve(this.workspaceRoot, filePath);
-    if (!fullPath.startsWith(this.workspaceRoot)) {
-      throw new Error('Cannot delete files outside the workspace.');
-    }
+    const fullPath = this.resolvePath(filePath);
     if (!fs.existsSync(fullPath)) {
       throw new Error(`File not found: ${filePath}`);
     }
