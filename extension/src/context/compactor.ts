@@ -1,11 +1,14 @@
 /**
- * SessionCompactor — Periodically compacts session notes to keep context manageable.
+ * SessionCompactor — Compacts session notes after every prompt into a rolling summary.
  *
- * After every N sessions (default 5), the compactor:
- * 1. Reads all un-compacted session .md files
+ * Maintains a single `_current_summary.md` file that gets rewritten after every prompt.
+ * This replaces the old strategy of creating timestamped `_compacted.md` files every 5 sessions.
+ *
+ * After each prompt:
+ * 1. Reads ALL session .md files (excluding _current_summary.md)
  * 2. Extracts: decisions, file changes, key insights, errors
  * 3. Drops: verbose tool outputs, repeated file reads, debugging loops
- * 4. Produces a single compacted .md file
+ * 4. Produces/overwrites `_current_summary.md`
  */
 
 import * as fs from 'fs';
@@ -13,21 +16,19 @@ import * as path from 'path';
 
 export class SessionCompactor {
   private sessionsDir: string;
-  private compactionThreshold: number;
 
-  constructor(workspaceRoot: string, compactionThreshold: number = 5) {
+  constructor(workspaceRoot: string, _compactionThreshold: number = 1) {
     this.sessionsDir = path.join(workspaceRoot, '.rewind', 'sessions');
-    this.compactionThreshold = compactionThreshold;
   }
 
-  /** Check if compaction is needed. */
+  /** Always compact when there are sessions. */
   shouldCompact(): boolean {
-    return this.getUncompactedSessions().length >= this.compactionThreshold;
+    return this.getAllSessions().length > 0;
   }
 
-  /** Run compaction. Returns the path to the compacted file, or null. */
+  /** Run compaction. Returns the path to _current_summary.md, or null. */
   async compact(): Promise<string | null> {
-    const sessions = this.getUncompactedSessions();
+    const sessions = this.getAllSessions();
     if (sessions.length === 0) { return null; }
 
     const lines: string[] = [];
@@ -121,12 +122,11 @@ export class SessionCompactor {
       }
     }
 
-    // ── Build the compacted summary ──
+    // ── Build the rolling summary ──
 
     lines.push('# Compacted Session Summary');
-    lines.push(`**Compiled:** ${new Date().toISOString()}`);
+    lines.push(`**Last Updated:** ${new Date().toISOString()}`);
     lines.push(`**Sessions:** ${sessions.length}`);
-    lines.push(`**Period:** ${sessions[sessions.length - 1]} to ${sessions[0]}`);
     lines.push('');
 
     lines.push('## Sessions Covered');
@@ -175,32 +175,27 @@ export class SessionCompactor {
       lines.push('');
     }
 
-    const timestamp = this.formatTimestamp(new Date().toISOString());
-    const filename = `${timestamp}_compacted.md`;
-    const compactedPath = path.join(this.sessionsDir, filename);
-    fs.writeFileSync(compactedPath, lines.join('\n'), 'utf-8');
+    // Write to the single rolling summary file
+    const summaryPath = path.join(this.sessionsDir, '_current_summary.md');
+    fs.writeFileSync(summaryPath, lines.join('\n'), 'utf-8');
 
-    return compactedPath;
+    return summaryPath;
   }
 
-  private getUncompactedSessions(): string[] {
+  /** Read the latest rolling summary. */
+  getLatestSummary(): string {
+    const summaryPath = path.join(this.sessionsDir, '_current_summary.md');
+    if (fs.existsSync(summaryPath)) {
+      return fs.readFileSync(summaryPath, 'utf-8');
+    }
+    return '';
+  }
+
+  /** Get ALL session .md files (excluding _current_summary.md). */
+  private getAllSessions(): string[] {
     if (!fs.existsSync(this.sessionsDir)) { return []; }
-
-    const allSessions = fs.readdirSync(this.sessionsDir)
-      .filter(f => f.endsWith('.md') && !f.includes('_compacted'))
+    return fs.readdirSync(this.sessionsDir)
+      .filter(f => f.endsWith('.md') && !f.startsWith('_'))
       .sort();
-
-    const compacted = fs.readdirSync(this.sessionsDir)
-      .filter(f => f.endsWith('.md') && f.includes('_compacted'))
-      .sort();
-
-    if (compacted.length === 0) { return allSessions; }
-
-    const lastCompacted = compacted[compacted.length - 1].split('_compacted')[0];
-    return allSessions.filter(s => s > lastCompacted);
-  }
-
-  private formatTimestamp(iso: string): string {
-    return iso.replace(/T/, '_').replace(/:/g, '-').slice(0, 19);
   }
 }

@@ -174,13 +174,11 @@ export class SessionNoteGenerator {
       .reverse();
   }
 
-  /** Get all compacted summary files. */
+  /** Get the rolling summary file if it exists. */
   listCompactedFiles(): string[] {
     if (!fs.existsSync(this.sessionsDir)) { return []; }
     return fs.readdirSync(this.sessionsDir)
-      .filter(f => f.endsWith('.md') && f.includes('_compacted'))
-      .sort()
-      .reverse();
+      .filter(f => f === '_current_summary.md');
   }
 
   /** Read a session file's content. */
@@ -201,62 +199,40 @@ export class SessionNoteGenerator {
 
   /**
    * Build a context string from session files for injecting into the system prompt.
-   * Loads the latest compacted summary + recent un-compacted sessions.
+   * Prefers the rolling _current_summary.md; falls back to last 3 raw sessions.
    */
   buildContextFromSessions(): string {
-    const compacted = this.listCompactedFiles();
-    const sessions = this.listSessionFiles();
+    // Load the rolling summary
+    const summaryPath = path.join(this.sessionsDir, '_current_summary.md');
+    let context = '';
 
-    if (sessions.length === 0 && compacted.length === 0) { return ''; }
-
-    let context = '═══ SESSION HISTORY ═══\n\n';
-
-    if (compacted.length > 0) {
-      const summary = this.readSessionFile(compacted[0]);
-      if (summary) {
-        context += '── COMPACTED SUMMARY ──\n';
-        context += summary.slice(0, 4000);
-        context += '\n\n';
+    if (fs.existsSync(summaryPath)) {
+      const summary = fs.readFileSync(summaryPath, 'utf-8');
+      if (summary.trim()) {
+        context += '═══ SESSION HISTORY (Compacted Summary) ═══\n\n';
+        // Truncate to ~2000 tokens (8000 chars) to leave room in the context window
+        context += summary.slice(0, 8000);
+        if (summary.length > 8000) {
+          context += '\n\n... (summary truncated)\n';
+        }
       }
     }
 
-    const recentSessions = sessions.slice(0, 3);
-    if (recentSessions.length > 0) {
-      context += '── RECENT SESSIONS ──\n';
-      for (const file of recentSessions) {
-        const content = this.readSessionFile(file);
-        if (!content) { continue; }
-        const lines = content.split('\n');
-
-        // Extract header (first ~10 lines)
-        const headerEnd = lines.findIndex((l, i) => i > 0 && l.startsWith('## '));
-        const header = lines.slice(0, Math.min(headerEnd > 0 ? headerEnd : 10, 10)).join('\n');
-
-        // Find decisions section
-        const decisionsStart = lines.findIndex(l => l.startsWith('## Decisions'));
-        let decisionsSection = '';
-        if (decisionsStart >= 0) {
-          const decisionsEnd = lines.findIndex((l, i) => i > decisionsStart && l.startsWith('## '));
-          decisionsSection = lines.slice(decisionsStart, decisionsEnd > 0 ? decisionsEnd : decisionsStart + 15).join('\n');
+    // If no summary exists, load the last 3 raw session files as fallback
+    if (!context) {
+      const sessions = this.listSessionFiles();
+      if (sessions.length > 0) {
+        context += '═══ RECENT SESSIONS ═══\n\n';
+        for (const file of sessions.slice(0, 3)) {
+          const content = this.readSessionFile(file);
+          if (content) {
+            // Just take the header and decisions
+            const lines = content.split('\n');
+            const abbreviated = lines.slice(0, 15).join('\n');
+            context += abbreviated + '\n---\n';
+          }
         }
-
-        // Find file changes section
-        const changesStart = lines.findIndex(l => l.startsWith('## Key File Changes'));
-        let changesSection = '';
-        if (changesStart >= 0) {
-          const changesEnd = lines.findIndex((l, i) => i > changesStart && l.startsWith('## '));
-          changesSection = lines.slice(changesStart, Math.min(changesEnd > 0 ? changesEnd : changesStart + 20, changesStart + 20)).join('\n');
-        }
-
-        context += `\n${header}\n`;
-        if (decisionsSection) { context += `${decisionsSection}\n`; }
-        if (changesSection) { context += `${changesSection}\n`; }
-        context += '---\n';
       }
-    }
-
-    if (context.length > 8000) {
-      context = context.slice(0, 7500) + '\n\n... (session history truncated)\n';
     }
 
     return context;
