@@ -118,6 +118,7 @@ export class RewindPanelProvider implements vscode.WebviewViewProvider {
       { provider, apiKey, model },
       toolExecutor,
       this.contextManager,
+      this.workspaceRoot,
     );
 
     try {

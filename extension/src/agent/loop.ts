@@ -5,11 +5,15 @@
  *
  * The loop continues until the LLM responds with only text (no tool_use blocks)
  * or we hit MAX_ITERATIONS. Context is auto-saved on git commit by GitWatcher.
+ *
+ * After each run, generates a session note (.md) capturing everything that happened.
  */
 
 import { LLMClient, LLMMessage, LLMConfig, ContentBlock } from '../llm/client';
 import { ToolExecutor } from '../tools/executor';
 import { ContextManager } from '../context/manager';
+import { SessionNoteGenerator } from '../context/sessionNotes';
+import { SessionCompactor } from '../context/compactor';
 
 const MAX_ITERATIONS = 25;
 
@@ -57,6 +61,7 @@ export class AgentLoop {
     config: LLMConfig,
     toolExecutor: ToolExecutor,
     contextManager: ContextManager,
+    private workspaceRoot: string,
   ) {
     this.llmClient = new LLMClient(config);
     this.toolExecutor = toolExecutor;
@@ -66,8 +71,15 @@ export class AgentLoop {
   /**
    * Run the agent with a user message.
    * Events are emitted via onEvent for the UI to display.
+   * After completion, generates a session note .md file.
    */
   async run(userMessage: string, onEvent: AgentEventHandler): Promise<void> {
+    // Start session note tracking
+    const noteGen = new SessionNoteGenerator(this.workspaceRoot);
+    noteGen.startSession();
+    noteGen.recordEvent({ type: 'user_message', content: userMessage });
+    let fullAssistantText = '';
+
     let systemPrompt = BASE_SYSTEM_PROMPT;
 
     const restoredContext = this.contextManager.getCurrentContextSummary();
@@ -82,6 +94,12 @@ export class AgentLoop {
     if (scratchpad.length > 0) {
       systemPrompt += '\n\nSESSION SCRATCHPAD (decisions and notes):\n';
       systemPrompt += scratchpad.map(n => `• ${n}`).join('\n');
+    }
+
+    // Inject session history from .md files
+    const sessionContext = noteGen.buildContextFromSessions();
+    if (sessionContext) {
+      systemPrompt += '\n\n' + sessionContext;
     }
 
     this.conversationHistory.push({ role: 'user', content: userMessage });
@@ -104,18 +122,21 @@ export class AgentLoop {
         const msg = error instanceof Error ? error.message : String(error);
         onEvent({ type: 'error', content: msg, isError: true });
         this.contextManager.addMessage('assistant', `[Error: ${msg}]`);
+        noteGen.recordEvent({ type: 'error', content: msg, isError: true });
+        // Still generate session note on error
+        await this.finishSession(noteGen, userMessage, fullAssistantText || `[Error: ${msg}]`);
         return;
       }
 
       let hasToolUse = false;
       // eslint-disable-next-line @typescript-eslint/no-explicit-any
       const toolResultBlocks: any[] = [];
-      let fullTextResponse = '';
 
       for (const block of response.content) {
         if (block.type === 'text' && block.text) {
-          fullTextResponse += block.text;
+          fullAssistantText += block.text;
           onEvent({ type: 'text', content: block.text });
+          noteGen.recordEvent({ type: 'assistant_text', content: block.text });
         }
 
         if (block.type === 'tool_use' && block.id && block.name && block.input) {
@@ -128,6 +149,14 @@ export class AgentLoop {
 
           onEvent({ type: 'tool_call', content: truncatedInput, toolName: block.name });
 
+          // Record tool call for session notes
+          noteGen.recordEvent({
+            type: 'tool_call',
+            content: `${block.name}(${inputSummary.slice(0, 200)})`,
+            toolName: block.name,
+            toolInput: block.input,
+          });
+
           const result = await this.toolExecutor.execute({
             id: block.id,
             name: block.name,
@@ -139,6 +168,23 @@ export class AgentLoop {
             : result.content;
 
           onEvent({ type: 'tool_result', content: displayResult, toolName: block.name, isError: result.is_error });
+
+          // Record tool result for session notes
+          noteGen.recordEvent({
+            type: 'tool_result',
+            content: result.content.slice(0, 500),
+            toolName: block.name,
+            toolInput: block.input,
+            isError: result.is_error,
+          });
+
+          // Track file changes for session notes
+          if (block.name === 'write_file' || block.name === 'edit_file') {
+            noteGen.recordFileChange(block.input.path, block.name === 'write_file' ? 'created' : 'modified');
+          }
+          if (block.name === 'delete_file') {
+            noteGen.recordFileChange(block.input.path, 'deleted');
+          }
 
           toolResultBlocks.push({
             type: 'tool_result',
@@ -157,12 +203,11 @@ export class AgentLoop {
         }
       }
 
-      // Save assistant response in history (as raw content blocks for tool_use support)
       this.conversationHistory.push({ role: 'assistant', content: response.content as ContentBlock[] });
 
-      if (fullTextResponse) {
-        this.contextManager.addMessage('assistant', fullTextResponse);
-        this.autoDetectDecisions(fullTextResponse);
+      if (fullAssistantText) {
+        this.contextManager.addMessage('assistant', fullAssistantText);
+        this.autoDetectDecisions(fullAssistantText);
       }
 
       if (hasToolUse && toolResultBlocks.length > 0) {
@@ -171,6 +216,9 @@ export class AgentLoop {
       }
 
       onEvent({ type: 'done', content: '' });
+
+      // Generate session note after successful completion
+      await this.finishSession(noteGen, userMessage, fullAssistantText);
       return;
     }
 
@@ -179,10 +227,30 @@ export class AgentLoop {
       content: `Agent reached safety limit of ${MAX_ITERATIONS} iterations. Try breaking the task into smaller steps.`,
       isError: true,
     });
+
+    await this.finishSession(noteGen, userMessage, fullAssistantText || '[Max iterations reached]');
   }
 
   resetHistory(): void {
     this.conversationHistory = [];
+  }
+
+  private async finishSession(noteGen: SessionNoteGenerator, userMessage: string, assistantText: string): Promise<void> {
+    try {
+      const notePath = await noteGen.endSession(userMessage, assistantText);
+      console.log(`RewindAI: Session note saved: ${notePath}`);
+
+      const compactor = new SessionCompactor(this.workspaceRoot);
+      if (compactor.shouldCompact()) {
+        const compactedPath = await compactor.compact();
+        if (compactedPath) {
+          console.log(`RewindAI: Compacted session notes: ${compactedPath}`);
+        }
+      }
+    } catch (error: unknown) {
+      const msg = error instanceof Error ? error.message : String(error);
+      console.error('RewindAI: Failed to save session note:', msg);
+    }
   }
 
   private autoDetectDecisions(text: string): void {
