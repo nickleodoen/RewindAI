@@ -2,7 +2,7 @@
   "name": "rewindai",
   "displayName": "RewindAI",
   "description": "Version-controlled AI memory tied to git commits. Context auto-saves on commit, auto-restores on checkout.",
-  "version": "0.2.0",
+  "version": "0.3.0",
   "publisher": "rewindai",
   "engines": {
     "vscode": "^1.93.0"
@@ -46,10 +46,30 @@
     "configuration": {
       "title": "RewindAI",
       "properties": {
+        "rewindai.provider": {
+          "type": "string",
+          "enum": ["anthropic", "openai"],
+          "default": "anthropic",
+          "description": "Which LLM API to use. Anthropic = Claude, OpenAI = GPT.",
+          "enumDescriptions": [
+            "Anthropic Claude API (claude-sonnet-4-6, claude-opus-4-6, etc.)",
+            "OpenAI API (gpt-4o, gpt-4o-mini, etc.)"
+          ]
+        },
+        "rewindai.apiKey": {
+          "type": "string",
+          "default": "",
+          "description": "Your API key for the selected provider. Get it from console.anthropic.com or platform.openai.com."
+        },
+        "rewindai.model": {
+          "type": "string",
+          "default": "claude-sonnet-4-6",
+          "description": "Model ID to use. Examples: claude-sonnet-4-6, claude-opus-4-6, gpt-4o, gpt-4o-mini"
+        },
         "rewindai.backendUrl": {
           "type": "string",
           "default": "http://localhost:8000",
-          "description": "URL of the RewindAI backend service"
+          "description": "RewindAI backend URL for Neo4j context indexing (optional — works without backend)"
         }
       }
     }

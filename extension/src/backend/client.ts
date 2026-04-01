@@ -18,20 +18,28 @@ export class BackendClient {
     this.baseUrl = config.get<string>('backendUrl', 'http://localhost:8000');
   }
 
-  private async request<T>(path: string, options?: RequestInit): Promise<T> {
+  private async request<T>(path: string, options?: RequestInit, timeoutMs: number = 30000): Promise<T> {
     const url = `${this.baseUrl}${path}`;
-    const response = await fetch(url, {
-      ...options,
-      headers: {
-        'Content-Type': 'application/json',
-        ...options?.headers,
-      },
-    });
-    if (!response.ok) {
-      const text = await response.text();
-      throw new Error(`Backend error ${response.status}: ${text}`);
+    const controller = new AbortController();
+    const timer = setTimeout(() => controller.abort(), timeoutMs);
+
+    try {
+      const response = await fetch(url, {
+        ...options,
+        signal: controller.signal,
+        headers: {
+          'Content-Type': 'application/json',
+          ...options?.headers,
+        },
+      });
+      if (!response.ok) {
+        const text = await response.text();
+        throw new Error(`Backend error ${response.status}: ${text}`);
+      }
+      return response.json() as Promise<T>;
+    } finally {
+      clearTimeout(timer);
     }
-    return response.json() as Promise<T>;
   }
 
   async health(): Promise<HealthResponse> {
@@ -71,13 +79,15 @@ export class BackendClient {
     systemPrompt: string,
     conversationHistory: Array<{ role: string; content: string }>
   ): Promise<{ response: string; messages: Array<{ role: string; content: string }> }> {
+    // Limit to last 20 messages to keep payloads manageable
+    const recentMessages = conversationHistory.slice(-20);
     return this.request('/api/v1/chat', {
       method: 'POST',
       body: JSON.stringify({
         message,
         system_prompt: systemPrompt,
-        conversation_history: conversationHistory,
+        conversation_history: recentMessages,
       }),
-    });
+    }, 60000); // 60s timeout for chat (LLM calls are slow)
   }
 }

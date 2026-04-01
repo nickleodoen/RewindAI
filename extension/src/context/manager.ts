@@ -1,4 +1,3 @@
-import * as vscode from 'vscode';
 import * as fs from 'fs';
 import * as path from 'path';
 import { BackendClient } from '../backend/client';
@@ -13,13 +12,14 @@ export interface ContextSnapshot {
     summary: string;
     decisions: Array<{ content: string; rationale: string }>;
     filesDiscussed: string[];
+    scratchpad: string[];
   };
   tokenCount: number;
 }
 
 /**
  * Manages context snapshots stored as files in .rewind/snapshots/.
- * Snapshots travel with the repo and are indexed in Neo4j for cross-commit queries.
+ * Tracks conversation, decisions, and a scratchpad for session notes.
  */
 export class ContextManager {
   private rewindDir: string;
@@ -27,6 +27,7 @@ export class ContextManager {
   private currentContext: ContextSnapshot | null = null;
   private conversationMessages: Array<{ role: string; content: string }> = [];
   private filesDiscussed: Set<string> = new Set();
+  private scratchpad: string[] = [];
 
   constructor(
     private workspaceRoot: string,
@@ -44,8 +45,6 @@ export class ContextManager {
     if (!fs.existsSync(this.snapshotsDir)) {
       fs.mkdirSync(this.snapshotsDir, { recursive: true });
     }
-    // Default: don't commit snapshots (they contain conversation history).
-    // Users can remove this .gitignore to share team context.
     const gitignorePath = path.join(this.rewindDir, '.gitignore');
     if (!fs.existsSync(gitignorePath)) {
       fs.writeFileSync(gitignorePath, 'snapshots/\n');
@@ -62,6 +61,18 @@ export class ContextManager {
 
   getMessages(): Array<{ role: string; content: string }> {
     return [...this.conversationMessages];
+  }
+
+  /** Add a note to the scratchpad (key decisions, important context) */
+  addToScratchpad(note: string): void {
+    this.scratchpad.push(`[${new Date().toISOString().slice(11, 19)}] ${note}`);
+    if (this.scratchpad.length > 50) {
+      this.scratchpad = this.scratchpad.slice(-50);
+    }
+  }
+
+  getScratchpad(): string[] {
+    return [...this.scratchpad];
   }
 
   getCurrentContextSummary(): string | null {
@@ -90,10 +101,16 @@ export class ContextManager {
       }
     }
 
+    if (this.scratchpad.length > 0) {
+      summary += '\nScratchpad (key notes from this session):\n';
+      for (const note of this.scratchpad) {
+        summary += `- ${note}\n`;
+      }
+    }
+
     return summary;
   }
 
-  /** Save a snapshot for a commit to .rewind/snapshots/{sha}.json */
   async saveSnapshot(
     commitSha: string,
     branch: string,
@@ -109,6 +126,7 @@ export class ContextManager {
         summary: this.generateSummary(),
         decisions: this.extractDecisions(),
         filesDiscussed: [...this.filesDiscussed],
+        scratchpad: [...this.scratchpad],
       },
       tokenCount: this.estimateTokenCount(),
     };
@@ -116,7 +134,6 @@ export class ContextManager {
     const filePath = path.join(this.snapshotsDir, `${commitSha}.json`);
     fs.writeFileSync(filePath, JSON.stringify(snapshot, null, 2));
 
-    // Also index in Neo4j via backend (best-effort)
     try {
       await this.backend.createSnapshot({
         sha: commitSha,
@@ -131,7 +148,6 @@ export class ContextManager {
     this.currentContext = snapshot;
   }
 
-  /** Load a snapshot for a commit (on checkout). File first, backend fallback. */
   async loadSnapshotForCommit(commitSha: string): Promise<boolean> {
     const filePath = path.join(this.snapshotsDir, `${commitSha}.json`);
 
@@ -142,6 +158,11 @@ export class ContextManager {
         this.currentContext = snapshot;
         this.conversationMessages = [...snapshot.context.messages];
         this.filesDiscussed = new Set(snapshot.context.filesDiscussed);
+        this.scratchpad = snapshot.context.scratchpad || [];
+
+        // Look for parent commit context to provide continuity
+        this.injectParentContext(snapshot);
+
         return true;
       } catch (e) {
         console.error('RewindAI: Failed to parse snapshot', e);
@@ -165,22 +186,52 @@ export class ContextManager {
               rationale: d.rationale,
             })),
             filesDiscussed: resp.files_discussed,
+            scratchpad: [],
           },
           tokenCount: resp.snapshot.token_count,
         };
         this.conversationMessages = [];
         this.filesDiscussed = new Set(resp.files_discussed);
+        this.scratchpad = [];
         return true;
       }
     } catch {
       // Backend unavailable
     }
 
-    // No snapshot — start fresh
     this.currentContext = null;
     this.conversationMessages = [];
     this.filesDiscussed = new Set();
+    this.scratchpad = [];
     return false;
+  }
+
+  /** Find the closest earlier snapshot and inject a summary as background */
+  private injectParentContext(current: ContextSnapshot): void {
+    const allSnapshots = this.listSnapshots();
+    const currentTime = new Date(current.timestamp).getTime();
+    let parentSnapshot: ContextSnapshot | null = null;
+    let parentTime = 0;
+
+    for (const sha of allSnapshots) {
+      if (sha === current.commitSha) { continue; }
+      try {
+        const pPath = path.join(this.snapshotsDir, `${sha}.json`);
+        const pRaw = fs.readFileSync(pPath, 'utf-8');
+        const pSnap: ContextSnapshot = JSON.parse(pRaw);
+        const pTime = new Date(pSnap.timestamp).getTime();
+        if (pTime < currentTime && pTime > parentTime) {
+          parentSnapshot = pSnap;
+          parentTime = pTime;
+        }
+      } catch { /* skip */ }
+    }
+
+    if (parentSnapshot) {
+      this.scratchpad.unshift(
+        `PRIOR COMMIT (${parentSnapshot.commitSha.slice(0, 7)}): ${parentSnapshot.context.summary}`
+      );
+    }
   }
 
   hasSnapshot(commitSha: string): boolean {
@@ -197,9 +248,8 @@ export class ContextManager {
   resetConversation(): void {
     this.conversationMessages = [];
     this.filesDiscussed = new Set();
+    this.scratchpad = [];
   }
-
-  // --- Helpers ---
 
   private generateSummary(): string {
     if (this.conversationMessages.length === 0) { return 'No conversation history.'; }
@@ -214,7 +264,7 @@ export class ContextManager {
     for (const msg of this.conversationMessages) {
       if (msg.role !== 'assistant') { continue; }
       const patterns = [
-        /(?:I recommend|Let's use|We should|I chose|I suggest|The best approach is|I'll use)\s+([^.!?]+)/gi,
+        /(?:I recommend|Let's use|We should|I chose|I suggest|The best approach is|I'll use|Decision:)\s+([^.!?\n]+)/gi,
       ];
       for (const pattern of patterns) {
         for (const match of msg.content.matchAll(pattern)) {
@@ -225,7 +275,14 @@ export class ContextManager {
         }
       }
     }
-    return decisions.slice(0, 10);
+    // Also include scratchpad decisions
+    for (const note of this.scratchpad) {
+      if (note.includes('DECISION:')) {
+        const content = note.replace(/^\[.*?\]\s*DECISION:\s*/, '');
+        decisions.push({ content, rationale: 'From scratchpad' });
+      }
+    }
+    return decisions.slice(0, 15);
   }
 
   private estimateTokenCount(): number {
