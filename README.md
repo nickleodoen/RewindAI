@@ -36,8 +36,11 @@ RewindAI makes git commits carry their AI context.
 - **Checkout** a previous commit — the agent is restored to exactly what it knew at that point
 - **No hallucination** — the restored agent only sees stored context, nothing leaks in
 
-<!-- SCREENSHOT PLACEHOLDER: Full VS Code window with RewindAI panel open, showing chat with tool calls -->
-> *Screenshot: RewindAI panel in VS Code with agentic coding — coming soon*
+<div align="center">
+<img src="assets/RewindAI-agent-session.png" alt="RewindAI Agent Session — reading files, analyzing code, with version-controlled context" width="900" />
+<br/>
+<em>RewindAI in action — the agent reads files, analyzes code, and maintains version-controlled context across commits</em>
+</div>
 
 ## How It Works
 
@@ -110,8 +113,6 @@ Every prompt generates a detailed `.md` session note in `.rewind/sessions/`:
 
 These notes are automatically compacted into a rolling `_current_summary.md` after every prompt — keeping context dense and useful.
 
-<!-- SCREENSHOT PLACEHOLDER: Session .md file in VS Code, showing decisions and diffs -->
-> *Screenshot: Auto-generated session notes with git diffs — coming soon*
 
 ## Neo4j Knowledge Graph
 
@@ -147,8 +148,6 @@ RETURN c.sha, d.content ORDER BY c.timestamp
 (:FileNode) -[:MODIFIED_IN]-> (:Commit)
 ```
 
-<!-- SCREENSHOT PLACEHOLDER: Neo4j Browser showing the knowledge graph visualization -->
-> *Screenshot: Neo4j knowledge graph showing commits, decisions, and files — coming soon*
 
 ## RocketRide AI Pipelines
 
@@ -235,8 +234,11 @@ In VS Code Settings (Cmd+,), search for "rewindai":
 
 Click the **REWINDAI** tab in the bottom panel (next to Terminal). Ask it anything about your code!
 
-<!-- SCREENSHOT PLACEHOLDER: VS Code settings showing RewindAI configuration -->
-> *Screenshot: VS Code settings for RewindAI — coming soon*
+<div align="center">
+<img src="assets/RewindAI-settings-APIs.png" alt="RewindAI Settings — configure any LLM provider with your own API key" width="900" />
+<br/>
+<em>Configure RewindAI with any LLM provider — bring your own API key, choose your model</em>
+</div>
 
 ## Commands
 
