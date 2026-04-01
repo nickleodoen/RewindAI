@@ -43,28 +43,28 @@ RewindAI makes git commits carry their AI context.
 
 ```text
 ┌─────────────────────────────────────────────────────────────┐
-│              VS Code Extension (TypeScript)                │
+│              VS Code Extension (TypeScript)                 │
 │                                                             │
-│  ┌──────────────┐  ┌────────────┐  ┌──────────────────┐   │
-│  │ RewindAI     │  │ Agentic    │  │ Git Watcher      │   │
-│  │ Chat Panel   │  │ Loop       │  │ (auto-save on    │   │
-│  │ (WebView)    │  │ (7 tools)  │  │ commit)          │   │
-│  └──────┬───────┘  └─────┬──────┘  └────────┬─────────┘   │
-│         │                │                   │             │
-│  ┌──────┴────────────────┴───────────────────┴──────────┐  │
-│  │                  Context Manager                     │  │
-│  │ .rewind/snapshots/{sha}.json - per-commit            │  │
-│  │ .rewind/sessions/*.md - per-prompt notes             │  │
-│  │ _current_summary.md - rolling compacted context      │  │
-│  └──────┬────────────────┬───────────────────┬──────────┘  │
+│  ┌──────────────┐  ┌────────────┐  ┌──────────────────┐     │
+│  │ RewindAI     │  │ Agentic    │  │ Git Watcher      │     │
+│  │ Chat Panel   │  │ Loop       │  │ (auto-save on    │     │
+│  │ (WebView)    │  │ (7 tools)  │  │ commit)          │     │
+│  └──────┬───────┘  └─────┬──────┘  └────────┬─────────┘     │
+│         │                │                   │              │
+│  ┌──────┴────────────────┴───────────────────┴──────────┐   │
+│  │                  Context Manager                     │   │
+│  │ .rewind/snapshots/{sha}.json - per-commit            │   │
+│  │ .rewind/sessions/*.md - per-prompt notes             │   │
+│  │ _current_summary.md - rolling compacted context      │   │
+│  └──────┬────────────────┬───────────────────┬──────────┘   │
 └─────────┼────────────────┼───────────────────┼──────────────┘
           │                │                   │
-   ┌──────┴──────┐   ┌─────┴──────┐   ┌───────┴────────┐
-   │ Neo4j       │   │ Anthropic  │   │ RocketRide    │
-   │ Knowledge   │   │ / OpenAI   │   │ AI Pipelines  │
-   │ Graph       │   │ (user's    │   │ (extraction,  │
-   │             │   │ API key)   │   │ compression)  │
-   └─────────────┘   └────────────┘   └────────────────┘
+   ┌──────┴──────┐   ┌─────┴──────┐    ┌───────┴────────┐
+   │ Neo4j       │   │ Anthropic  │    │ RocketRide     │
+   │ Knowledge   │   │ / OpenAI   │    │ AI Pipelines   │
+   │ Graph       │   │ (user's    │    │ (extraction,   │
+   │             │   │ API key)   │    │ compression)   │
+   └─────────────┘   └────────────┘    └────────────────┘
 ```
 
 ### The Agentic Loop
