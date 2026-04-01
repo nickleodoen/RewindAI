@@ -42,29 +42,29 @@ RewindAI makes git commits carry their AI context.
 ## How It Works
 
 ```text
-┌───────────────────────────────────────────────────────────────────────┐
-│                    VS Code Extension (TypeScript)                    │
-│                                                                       │
-│  ┌───────────────────┐  ┌────────────────┐  ┌─────────────────────┐  │
-│  │ RewindAI Chat     │  │ Agentic Loop   │  │ Git Watcher         │  │
-│  │ Panel             │  │   (7 tools)    │  │ (auto-save on       │  │
-│  │ (WebView)         │  │                │  │ commit)             │  │
-│  └─────────┬─────────┘  └───────┬────────┘  └──────────┬──────────┘  │
-│            │                    │                      │             │
-│  ┌─────────┴────────────────────┴──────────────────────┴──────────┐  │
-│  │                        Context Manager                         │  │
-│  │  .rewind/snapshots/{sha}.json  - per-commit                    │  │
-│  │  .rewind/sessions/*.md         - per-prompt notes              │  │
-│  │  _current_summary.md           - rolling compacted context     │  │
-│  └─────────┬──────────────────────┬──────────────────────┬─────────┘  │
-└────────────┼──────────────────────┼──────────────────────┼────────────┘
-             │                      │                      │
-      ┌──────┴──────┐       ┌───────┴────────┐      ┌──────┴──────────┐
-      │ Neo4j       │       │ Anthropic /   │      │ RocketRide      │
-      │ Knowledge   │       │ OpenAI        │      │ AI Pipelines    │
-      │ Graph       │       │ (user's API   │      │ (extraction,    │
-      │             │       │ key)          │      │ compression)    │
-      └─────────────┘       └────────────────┘      └─────────────────┘
+┌─────────────────────────────────────────────────────────────┐
+│              VS Code Extension (TypeScript)                │
+│                                                             │
+│  ┌──────────────┐  ┌────────────┐  ┌──────────────────┐   │
+│  │ RewindAI     │  │ Agentic    │  │ Git Watcher      │   │
+│  │ Chat Panel   │  │ Loop       │  │ (auto-save on    │   │
+│  │ (WebView)    │  │ (7 tools)  │  │ commit)          │   │
+│  └──────┬───────┘  └─────┬──────┘  └────────┬─────────┘   │
+│         │                │                   │             │
+│  ┌──────┴────────────────┴───────────────────┴──────────┐  │
+│  │                  Context Manager                     │  │
+│  │ .rewind/snapshots/{sha}.json - per-commit            │  │
+│  │ .rewind/sessions/*.md - per-prompt notes             │  │
+│  │ _current_summary.md - rolling compacted context      │  │
+│  └──────┬────────────────┬───────────────────┬──────────┘  │
+└─────────┼────────────────┼───────────────────┼──────────────┘
+          │                │                   │
+   ┌──────┴──────┐   ┌─────┴──────┐   ┌───────┴────────┐
+   │ Neo4j       │   │ Anthropic  │   │ RocketRide    │
+   │ Knowledge   │   │ / OpenAI   │   │ AI Pipelines  │
+   │ Graph       │   │ (user's    │   │ (extraction,  │
+   │             │   │ API key)   │   │ compression)  │
+   └─────────────┘   └────────────┘   └────────────────┘
 ```
 
 ### The Agentic Loop
