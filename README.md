@@ -60,12 +60,28 @@ RewindAI makes git commits carry their AI context.
     </td>
   </tr>
   <tr>
+    <td align="center"><code>│</code></td>
+    <td align="center"><code>│</code></td>
+    <td align="center"><code>│</code></td>
+  </tr>
+  <tr>
+    <td colspan="3" align="center"><code>└────────────┬────────────┬────────────┘</code></td>
+  </tr>
+  <tr>
     <td colspan="3" align="center">
       <strong>Context Manager</strong><br />
       <code>.rewind/snapshots/{sha}.json</code> - per-commit<br />
       <code>.rewind/sessions/*.md</code> - per-prompt notes<br />
       <code>_current_summary.md</code> - rolling compacted context
     </td>
+  </tr>
+  <tr>
+    <td colspan="3" align="center"><code>┌────────────┴────────────┴────────────┐</code></td>
+  </tr>
+  <tr>
+    <td align="center"><code>│</code></td>
+    <td align="center"><code>│</code></td>
+    <td align="center"><code>│</code></td>
   </tr>
   <tr>
     <td align="center">
