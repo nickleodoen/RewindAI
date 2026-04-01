@@ -429,6 +429,8 @@ export class RewindPanelProvider implements vscode.WebviewViewProvider {
       hasRestoredContext: !!summary,
       snapshotCount: snapshots.length,
       tokenEstimate: Math.ceil(messages.map(m => m.content).join('').length / 4),
+      neo4jConnected: this.neo4j?.isConnected() || false,
+      rocketrideConnected: this.rocketride?.isConnected() || false,
     });
   }
 
@@ -699,6 +701,8 @@ export class RewindPanelProvider implements vscode.WebviewViewProvider {
   <span class="stat"><span class="lbl">Msgs</span> <span class="val" id="msgCount">0</span></span>
   <span class="stat"><span class="lbl">Snaps</span> <span class="val" id="snapCount">0</span></span>
   <span class="stat"><span class="val" id="contextStatus">Fresh</span></span>
+  <span class="stat"><span class="dot" id="neo4jDot" title="Neo4j"></span><span class="lbl">Neo4j</span></span>
+  <span class="stat"><span class="dot" id="rocketrideDot" title="RocketRide"></span><span class="lbl">RR</span></span>
 </div>
 
 <div class="tab-bar">
@@ -930,6 +934,8 @@ When you commit, I save our context. When you checkout a different commit, I rem
         document.getElementById('snapCount').textContent = msg.snapshotCount;
         document.getElementById('contextStatus').textContent = msg.hasRestoredContext ? 'Restored' : 'Fresh';
         document.getElementById('statusDot').className = 'dot' + (msg.hasRestoredContext ? '' : ' inactive');
+        document.getElementById('neo4jDot').className = 'dot' + (msg.neo4jConnected ? '' : ' inactive');
+        document.getElementById('rocketrideDot').className = 'dot' + (msg.rocketrideConnected ? '' : ' inactive');
         break;
       case 'config': {
         hasApiKey = msg.hasApiKey;
