@@ -35,6 +35,8 @@ export class GitWatcher implements vscode.Disposable {
 
     if (!currentCommit) { return; }
 
+    console.log(`RewindAI GitWatcher: HEAD changed from ${this.lastKnownCommit?.slice(0, 7)} to ${currentCommit?.slice(0, 7)} (branch: ${currentBranch})`);
+
     // New commit on the same branch
     if (currentCommit !== this.lastKnownCommit && currentBranch === this.lastKnownBranch) {
       await this.onNewCommit(currentCommit, currentBranch ?? 'main');
@@ -70,6 +72,7 @@ export class GitWatcher implements vscode.Disposable {
   }
 
   private async onCheckout(commitSha: string, branch: string): Promise<void> {
+    console.log(`RewindAI GitWatcher: Checkout detected → ${commitSha.slice(0, 7)} on ${branch}`);
     const hasContext = await this.contextManager.loadSnapshotForCommit(commitSha);
 
     // Notify the panel

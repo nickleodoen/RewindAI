@@ -59,6 +59,18 @@ export class RewindPanelProvider implements vscode.WebviewViewProvider {
   }
 
   notifyContextChanged(commitSha: string, branch: string, restored: boolean): void {
+    // Clear the chat messages in the UI
+    this.webviewView?.webview.postMessage({ type: 'clearChat' });
+
+    // Show a context change message
+    this.webviewView?.webview.postMessage({
+      type: 'message',
+      role: 'assistant',
+      content: restored
+        ? `Context restored to commit ${commitSha.slice(0, 7)} (${branch})\n\nI remember what we discussed at this point. Ask me anything — my memory matches this commit's state.`
+        : `Switched to commit ${commitSha.slice(0, 7)} (${branch})\n\nNo saved context for this commit — starting a fresh session. Our conversation will be saved when you commit.`,
+    });
+
     this.webviewView?.webview.postMessage({ type: 'contextChanged', commitSha, branch, restored });
     this.sendStatus();
   }
@@ -690,6 +702,12 @@ When you commit, I save our context. When you checkout a different commit, I rem
   window.addEventListener('message', (event) => {
     const msg = event.data;
     switch (msg.type) {
+      case 'clearChat': {
+        // Remove all messages except the welcome message
+        const msgs = messagesEl.querySelectorAll('.msg, .tool-block');
+        msgs.forEach(m => m.remove());
+        break;
+      }
       case 'message': {
         const div = document.createElement('div');
         div.className = 'msg ' + msg.role + (msg.isError ? ' error' : '');

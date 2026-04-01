@@ -2,6 +2,7 @@ import * as fs from 'fs';
 import * as path from 'path';
 import { BackendClient } from '../backend/client';
 import { SessionNoteGenerator } from './sessionNotes';
+import { SessionCompactor } from './compactor';
 
 export interface ContextSnapshot {
   commitSha: string;
@@ -18,6 +19,7 @@ export interface ContextSnapshot {
   tokenCount: number;
   sessionFiles?: string[];
   compactedFiles?: string[];
+  sessionTimestampCutoff?: string;
 }
 
 /**
@@ -165,6 +167,7 @@ export class ContextManager {
       tokenCount: this.estimateTokenCount(),
       sessionFiles: sessionFiles.slice(0, 20),
       compactedFiles: compactedFiles.slice(0, 5),
+      sessionTimestampCutoff: new Date().toISOString(),
     };
 
     const filePath = path.join(this.snapshotsDir, `${commitSha}.json`);
@@ -186,6 +189,8 @@ export class ContextManager {
 
   async loadSnapshotForCommit(commitSha: string): Promise<boolean> {
     const filePath = path.join(this.snapshotsDir, `${commitSha}.json`);
+    console.log(`RewindAI ContextManager: Loading snapshot for ${commitSha.slice(0, 7)}`);
+    console.log(`RewindAI ContextManager: Snapshot file exists: ${fs.existsSync(filePath)}`);
 
     if (fs.existsSync(filePath)) {
       try {
@@ -199,9 +204,12 @@ export class ContextManager {
         // Look for parent commit context to provide continuity
         this.injectParentContext(snapshot);
 
-        if (snapshot.sessionFiles && snapshot.sessionFiles.length > 0) {
-          console.log(`RewindAI: ${snapshot.sessionFiles.length} session notes available for this commit`);
+        // Rebuild session summary scoped to this commit's timeframe
+        if (snapshot.sessionTimestampCutoff || snapshot.sessionFiles) {
+          this.rebuildSessionContextForCommit(snapshot);
         }
+
+        console.log(`RewindAI ContextManager: Loaded ${this.conversationMessages.length} messages, ${this.filesDiscussed.size} files`);
 
         return true;
       } catch (e) {
@@ -271,6 +279,75 @@ export class ContextManager {
       this.scratchpad.unshift(
         `PRIOR COMMIT (${parentSnapshot.commitSha.slice(0, 7)}): ${parentSnapshot.context.summary}`
       );
+    }
+  }
+
+  /**
+   * Rebuild _current_summary.md using only session files that belong to this commit.
+   * Ensures temporal isolation — checking out an old commit doesn't include
+   * session notes from future commits.
+   */
+  private rebuildSessionContextForCommit(snapshot: ContextSnapshot): void {
+    const noteGen = new SessionNoteGenerator(this.workspaceRoot);
+    const allSessions = noteGen.listSessionFiles();
+
+    // Filter sessions to only those that existed at the commit's time
+    let relevantSessions: string[];
+
+    if (snapshot.sessionFiles && snapshot.sessionFiles.length > 0) {
+      relevantSessions = snapshot.sessionFiles;
+    } else if (snapshot.sessionTimestampCutoff) {
+      const cutoff = snapshot.sessionTimestampCutoff.replace(/T/, '_').replace(/:/g, '-').slice(0, 19);
+      relevantSessions = allSessions.filter(f => f <= cutoff);
+    } else {
+      relevantSessions = allSessions;
+    }
+
+    console.log(`RewindAI: Commit ${snapshot.commitSha.slice(0, 7)} has ${relevantSessions.length}/${allSessions.length} session files`);
+
+    // Write a commit-specific summary to _current_summary.md
+    const sessionsDir = path.join(this.workspaceRoot, '.rewind', 'sessions');
+    const summaryPath = path.join(sessionsDir, '_current_summary.md');
+
+    const lines: string[] = [
+      `# Context Summary (Commit ${snapshot.commitSha.slice(0, 7)})`,
+      `**Commit:** ${snapshot.commitMessage}`,
+      `**Branch:** ${snapshot.branch}`,
+      `**Timestamp:** ${snapshot.timestamp}`,
+      `**Sessions:** ${relevantSessions.length}`,
+      '',
+    ];
+
+    if (snapshot.context.summary) {
+      lines.push('## Conversation Summary');
+      lines.push(snapshot.context.summary);
+      lines.push('');
+    }
+
+    if (snapshot.context.decisions && snapshot.context.decisions.length > 0) {
+      lines.push('## Decisions at This Commit');
+      for (const d of snapshot.context.decisions) {
+        lines.push(`- **${d.content}** — ${d.rationale}`);
+      }
+      lines.push('');
+    }
+
+    if (snapshot.context.filesDiscussed && snapshot.context.filesDiscussed.length > 0) {
+      lines.push('## Files Discussed');
+      lines.push(snapshot.context.filesDiscussed.join(', '));
+      lines.push('');
+    }
+
+    if (snapshot.context.scratchpad && snapshot.context.scratchpad.length > 0) {
+      lines.push('## Session Notes');
+      for (const note of snapshot.context.scratchpad) {
+        lines.push(`- ${note}`);
+      }
+      lines.push('');
+    }
+
+    if (fs.existsSync(sessionsDir)) {
+      fs.writeFileSync(summaryPath, lines.join('\n'), 'utf-8');
     }
   }
 
