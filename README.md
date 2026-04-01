@@ -72,14 +72,14 @@ RewindAI makes git commits carry their AI context.
 RewindAI isn't just a chat. It's a full coding agent with 7 tools:
 
 | Tool | What It Does |
-|------|-------------|
-| `read_file` | Read any file in the workspace |
-| `write_file` | Create or overwrite files |
-| `edit_file` | Find-and-replace for targeted edits |
-| `run_command` | Execute shell commands (npm test, git status, etc.) |
-| `list_files` | Explore the project structure |
-| `search_files` | Grep across the codebase |
-| `delete_file` | Remove files |
+|----------------|------------------------------------------------------|
+| `read_file`    | Read any file in the workspace                       |
+| `write_file`   | Create or overwrite files                            |
+| `edit_file`    | Find-and-replace for targeted edits                  |
+| `run_command`  | Execute shell commands (npm test, git status, etc.)  |
+| `list_files`   | Explore the project structure                        |
+| `search_files` | Grep across the codebase                             |
+| `delete_file`  | Remove files                                         |
 
 The agent decides which tools to use based on your request. You say "add input validation to the login form" — it reads the file, edits it, runs the tests.
 
