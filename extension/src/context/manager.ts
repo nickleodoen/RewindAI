@@ -1,6 +1,7 @@
 import * as fs from 'fs';
 import * as path from 'path';
 import { BackendClient } from '../backend/client';
+import { SessionNoteGenerator } from './sessionNotes';
 
 export interface ContextSnapshot {
   commitSha: string;
@@ -15,6 +16,8 @@ export interface ContextSnapshot {
     scratchpad: string[];
   };
   tokenCount: number;
+  sessionFiles?: string[];
+  compactedFiles?: string[];
 }
 
 /**
@@ -45,9 +48,13 @@ export class ContextManager {
     if (!fs.existsSync(this.snapshotsDir)) {
       fs.mkdirSync(this.snapshotsDir, { recursive: true });
     }
+    const sessionsDir = path.join(this.rewindDir, 'sessions');
+    if (!fs.existsSync(sessionsDir)) {
+      fs.mkdirSync(sessionsDir, { recursive: true });
+    }
     const gitignorePath = path.join(this.rewindDir, '.gitignore');
     if (!fs.existsSync(gitignorePath)) {
-      fs.writeFileSync(gitignorePath, 'snapshots/\n');
+      fs.writeFileSync(gitignorePath, 'snapshots/\nsessions/\n');
     }
   }
 
@@ -108,6 +115,13 @@ export class ContextManager {
       }
     }
 
+    // Include session note context
+    const noteGen = new SessionNoteGenerator(this.workspaceRoot);
+    const sessionContext = noteGen.buildContextFromSessions();
+    if (sessionContext) {
+      summary += '\n\n' + sessionContext;
+    }
+
     return summary;
   }
 
@@ -116,6 +130,11 @@ export class ContextManager {
     branch: string,
     commitMessage: string,
   ): Promise<void> {
+    // Include session file references in the snapshot
+    const noteGen = new SessionNoteGenerator(this.workspaceRoot);
+    const sessionFiles = noteGen.listSessionFiles();
+    const compactedFiles = noteGen.listCompactedFiles();
+
     const snapshot: ContextSnapshot = {
       commitSha,
       branch,
@@ -129,6 +148,8 @@ export class ContextManager {
         scratchpad: [...this.scratchpad],
       },
       tokenCount: this.estimateTokenCount(),
+      sessionFiles: sessionFiles.slice(0, 20),
+      compactedFiles: compactedFiles.slice(0, 5),
     };
 
     const filePath = path.join(this.snapshotsDir, `${commitSha}.json`);
@@ -162,6 +183,10 @@ export class ContextManager {
 
         // Look for parent commit context to provide continuity
         this.injectParentContext(snapshot);
+
+        if (snapshot.sessionFiles && snapshot.sessionFiles.length > 0) {
+          console.log(`RewindAI: ${snapshot.sessionFiles.length} session notes available for this commit`);
+        }
 
         return true;
       } catch (e) {
