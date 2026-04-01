@@ -2,6 +2,7 @@ import * as vscode from 'vscode';
 import { ContextManager } from '../context/manager';
 import { ToolExecutor } from '../tools/executor';
 import { AgentLoop } from '../agent/loop';
+import { SessionNoteGenerator } from '../context/sessionNotes';
 
 /**
  * Provides the RewindAI webview panel that appears as its own tab
@@ -98,6 +99,11 @@ export class RewindPanelProvider implements vscode.WebviewViewProvider {
       return;
     }
 
+    if (text.trim() === '/sessions' || text.trim() === '/notes') {
+      await this.handleSessions();
+      return;
+    }
+
     this.webviewView?.webview.postMessage({ type: 'message', role: 'user', content: text });
     this.webviewView?.webview.postMessage({ type: 'typing', show: true });
 
@@ -173,6 +179,40 @@ export class RewindPanelProvider implements vscode.WebviewViewProvider {
 
     this.webviewView?.webview.postMessage({ type: 'message', role: 'assistant', content: response });
     this.webviewView?.webview.postMessage({ type: 'typing', show: false });
+  }
+
+  private async handleSessions(): Promise<void> {
+    this.webviewView?.webview.postMessage({ type: 'message', role: 'user', content: '/sessions' });
+
+    const noteGen = new SessionNoteGenerator(this.workspaceRoot);
+    const sessions = noteGen.listSessionFiles();
+    const compacted = noteGen.listCompactedFiles();
+
+    if (sessions.length === 0 && compacted.length === 0) {
+      this.webviewView?.webview.postMessage({
+        type: 'message', role: 'assistant',
+        content: 'No session notes yet. Chat with me and I\'ll save detailed notes about each conversation.\n\nSession notes include: file changes with diffs, decisions made, commands run, key insights, and open questions.',
+      });
+      return;
+    }
+
+    let output = `Session Notes (${sessions.length} sessions, ${compacted.length} compacted)\n\n`;
+
+    if (compacted.length > 0) {
+      output += `Latest compacted summary: ${compacted[0]}\n\n`;
+    }
+
+    output += 'Recent sessions:\n';
+    for (const filename of sessions.slice(0, 10)) {
+      const content = noteGen.readSessionFile(filename);
+      const title = content.split('\n')[0]?.replace('# Session: ', '') || filename;
+      output += `  ${filename.slice(0, 19)} — ${title}\n`;
+    }
+
+    output += '\nSession notes are saved to .rewind/sessions/ and auto-compacted every 5 sessions.';
+    output += '\nThey are automatically loaded as context when you return to a commit.';
+
+    this.webviewView?.webview.postMessage({ type: 'message', role: 'assistant', content: output });
   }
 
   private sendStatus(): void {

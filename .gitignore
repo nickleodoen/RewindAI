@@ -9,3 +9,4 @@ neo4j_data/
 .DS_Store
 *.vsix
 .rewind/snapshots/
+.rewind/sessions/
