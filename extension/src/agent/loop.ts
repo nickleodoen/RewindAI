@@ -114,8 +114,8 @@ export class AgentLoop {
       systemPrompt += scratchpad.map(n => `• ${n}`).join('\n');
     }
 
-    // Inject session history from .md files
-    const sessionContext = noteGen.buildContextFromSessions();
+    // Inject only session context relevant to the user's current query
+    const sessionContext = noteGen.buildRelevantContext(userMessage, 3);
     if (sessionContext) {
       systemPrompt += '\n\n' + sessionContext;
     }

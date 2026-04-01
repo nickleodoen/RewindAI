@@ -238,6 +238,114 @@ export class SessionNoteGenerator {
     return context;
   }
 
+  /**
+   * Build context from ONLY the session files relevant to the user's current query.
+   * Scores each session by keyword overlap with the query and returns context
+   * from only the top-scoring sessions. Falls back to buildContextFromSessions()
+   * if no meaningful keywords found.
+   */
+  buildRelevantContext(userQuery: string, maxSessions: number = 3): string {
+    const sessions = this.listSessionFiles();
+    if (sessions.length === 0) { return ''; }
+
+    const queryLower = userQuery.toLowerCase();
+    const stopWords = new Set([
+      'the', 'a', 'an', 'is', 'are', 'was', 'what', 'how', 'why', 'can', 'you',
+      'our', 'this', 'that', 'with', 'for', 'and', 'but', 'not', 'about', 'just',
+      'want', 'need', 'make', 'get', 'from', 'have', 'has', 'had', 'do', 'does',
+    ]);
+    const queryWords = new Set(
+      queryLower.split(/[^a-z0-9]+/).filter(w => w.length > 2 && !stopWords.has(w))
+    );
+
+    if (queryWords.size === 0) {
+      return this.buildContextFromSessions();
+    }
+
+    // Score each session file
+    const scored: Array<{ file: string; score: number; preview: string }> = [];
+
+    for (const file of sessions) {
+      const content = this.readSessionFile(file);
+      if (!content) { continue; }
+
+      const contentLower = content.toLowerCase();
+      let score = 0;
+
+      for (const word of queryWords) {
+        const regex = new RegExp(word, 'gi');
+        const matches = contentLower.match(regex);
+        if (matches) { score += matches.length; }
+      }
+
+      // Bonus for matching in the title
+      const title = content.split('\n')[0]?.toLowerCase() || '';
+      for (const word of queryWords) {
+        if (title.includes(word)) { score += 3; }
+      }
+
+      // Bonus for matching in decisions section
+      const decisionsMatch = content.match(/## Decisions Made[\s\S]*?(?=##|$)/i);
+      if (decisionsMatch) {
+        for (const word of queryWords) {
+          if (decisionsMatch[0].toLowerCase().includes(word)) { score += 4; }
+        }
+      }
+
+      // Bonus for matching file paths mentioned
+      const filePathsMatch = content.match(/## Key File Changes[\s\S]*?(?=##|$)/i);
+      if (filePathsMatch) {
+        for (const word of queryWords) {
+          if (filePathsMatch[0].toLowerCase().includes(word)) { score += 3; }
+        }
+      }
+
+      if (score > 0) {
+        const lines = content.split('\n');
+        const header = lines.slice(0, 8).join('\n');
+
+        let decisionsSection = '';
+        const dStart = lines.findIndex(l => l.startsWith('## Decisions'));
+        if (dStart >= 0) {
+          const dEnd = lines.findIndex((l, i) => i > dStart && l.startsWith('## '));
+          decisionsSection = lines.slice(dStart, dEnd > 0 ? Math.min(dEnd, dStart + 10) : dStart + 10).join('\n');
+        }
+
+        let changesSection = '';
+        const cStart = lines.findIndex(l => l.startsWith('## Key File Changes'));
+        if (cStart >= 0) {
+          const cEnd = lines.findIndex((l, i) => i > cStart && l.startsWith('## '));
+          changesSection = lines.slice(cStart, cEnd > 0 ? Math.min(cEnd, cStart + 15) : cStart + 15).join('\n');
+        }
+
+        scored.push({
+          file,
+          score,
+          preview: [header, decisionsSection, changesSection].filter(Boolean).join('\n\n'),
+        });
+      }
+    }
+
+    if (scored.length === 0) {
+      return this.buildContextFromSessions();
+    }
+
+    scored.sort((a, b) => b.score - a.score);
+    const topSessions = scored.slice(0, maxSessions);
+
+    let context = `═══ RELEVANT SESSION CONTEXT (${topSessions.length} of ${sessions.length} sessions) ═══\n\n`;
+
+    for (const s of topSessions) {
+      context += s.preview + '\n---\n\n';
+    }
+
+    if (context.length > 6000) {
+      context = context.slice(0, 5500) + '\n\n... (context truncated)\n';
+    }
+
+    return context;
+  }
+
   // ── Private helpers ──
 
   private generateMarkdown(note: SessionNote): string {
