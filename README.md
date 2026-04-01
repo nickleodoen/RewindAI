@@ -41,23 +41,48 @@ RewindAI makes git commits carry their AI context.
 
 ## How It Works
 
-```mermaid
-graph TD
-    subgraph ext[VS Code Extension]
-        Panel[Chat Panel]
-        Loop[Agentic Loop]
-        Watcher[Git Watcher]
-        CM[Context Manager]
-        Panel --> CM
-        Loop --> CM
-        Watcher --> CM
-    end
-    CM --> Neo4j[Neo4j Graph]
-    CM --> LLM[Anthropic / OpenAI]
-    CM --> RR[RocketRide Pipelines]
-```
-
-> **Context Manager** stores snapshots in `.rewind/snapshots/{sha}.json` (per-commit), session notes in `.rewind/sessions/*.md` (per-prompt), and a rolling `_current_summary.md`.
+<table>
+  <tr>
+    <th colspan="3" align="center">VS Code Extension (TypeScript)</th>
+  </tr>
+  <tr>
+    <td align="center">
+      <strong>RewindAI Chat Panel</strong><br />
+      (WebView)
+    </td>
+    <td align="center">
+      <strong>Agentic Loop</strong><br />
+      (7 tools)
+    </td>
+    <td align="center">
+      <strong>Git Watcher</strong><br />
+      (auto-save on commit)
+    </td>
+  </tr>
+  <tr>
+    <td colspan="3" align="center">
+      <strong>Context Manager</strong><br />
+      <code>.rewind/snapshots/{sha}.json</code> - per-commit<br />
+      <code>.rewind/sessions/*.md</code> - per-prompt notes<br />
+      <code>_current_summary.md</code> - rolling compacted context
+    </td>
+  </tr>
+  <tr>
+    <td align="center">
+      <strong>Neo4j</strong><br />
+      Knowledge Graph
+    </td>
+    <td align="center">
+      <strong>Anthropic / OpenAI</strong><br />
+      (user's API key)
+    </td>
+    <td align="center">
+      <strong>RocketRide</strong><br />
+      AI Pipelines<br />
+      (extraction, compression)
+    </td>
+  </tr>
+</table>
 
 ### The Agentic Loop
 
