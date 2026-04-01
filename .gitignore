@@ -10,3 +10,4 @@ neo4j_data/
 *.vsix
 .rewind/snapshots/
 .rewind/sessions/
+test-repo/
