@@ -13,7 +13,7 @@
 [![RocketRide AI](https://img.shields.io/badge/RocketRide-AI%20Pipelines-FF6B35)](https://rocketride.org/)
 [![TypeScript](https://img.shields.io/badge/TypeScript-Strict-3178C6?logo=typescript)](https://www.typescriptlang.org/)
 
-*Built at [HackwithBay 2.0](https://hackwithbay.com) by [Nikhil Yachareni](https://github.com/nickleodoen) & [Mihir Modi](https://github.com/mihirmodi)*
+*Built at [HackwithBay 2.0](https://luma.com/2n8vk5s3?tk=N8NtoT) by [Nikhil Yachareni](https://github.com/nickleodoen) & [Mihir Modi](https://github.com/wdwd720)*
 
 ---
 
@@ -351,7 +351,7 @@ Make sure you opened a folder with a `.git` directory. RewindAI only activates i
 
 **RewindAI** — Built at HackwithBay 2.0
 
-[Nikhil Yachareni](https://github.com/nickleodoen) · [Mihir Modi](https://github.com/mihirmodi)
+[Nikhil Yachareni](https://github.com/nickleodoen) · [Mihir Modi](https://github.com/wdwd720)
 
 *Git for AI memory. Because your agent should remember.*
 
