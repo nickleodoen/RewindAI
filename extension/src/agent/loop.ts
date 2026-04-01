@@ -14,6 +14,7 @@ import { ToolExecutor } from '../tools/executor';
 import { ContextManager } from '../context/manager';
 import { SessionNoteGenerator } from '../context/sessionNotes';
 import { SessionCompactor } from '../context/compactor';
+import { RocketRideClient } from '../pipelines/rocketrideClient';
 
 const MAX_ITERATIONS = 25;
 
@@ -80,6 +81,7 @@ export class AgentLoop {
     toolExecutor: ToolExecutor,
     contextManager: ContextManager,
     private workspaceRoot: string,
+    private rocketride?: RocketRideClient,
   ) {
     this.llmClient = new LLMClient(config);
     this.toolExecutor = toolExecutor;
@@ -290,7 +292,25 @@ export class AgentLoop {
       const notePath = await noteGen.endSession(userMessage, assistantText);
       console.log(`RewindAI: Session note saved: ${notePath}`);
 
-      const compactor = new SessionCompactor(this.workspaceRoot);
+      // Try RocketRide LLM enrichment (non-blocking — falls back gracefully)
+      if (this.rocketride?.isConnected()) {
+        try {
+          const toolCalls = noteGen.getToolCallSummaries();
+          const enriched = await this.rocketride.enrichSessionNote(userMessage, assistantText, toolCalls);
+          if (enriched) {
+            console.log(`RewindAI: RocketRide enriched session — ${enriched.decisions.length} decisions, ${enriched.insights.length} insights`);
+            // Add enriched decisions to scratchpad
+            for (const d of enriched.decisions) {
+              this.contextManager.addToScratchpad(`DECISION (AI): ${d.content}`);
+            }
+          }
+        } catch (e: unknown) {
+          const msg = e instanceof Error ? e.message : String(e);
+          console.log('RewindAI: RocketRide enrichment skipped:', msg);
+        }
+      }
+
+      const compactor = new SessionCompactor(this.workspaceRoot, 1, this.rocketride);
       if (compactor.shouldCompact()) {
         const compactedPath = await compactor.compact();
         if (compactedPath) {

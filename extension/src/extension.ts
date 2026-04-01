@@ -6,6 +6,7 @@ import { GitWatcher } from './git/watcher';
 import { ContextManager } from './context/manager';
 import { BackendClient } from './backend/client';
 import { Neo4jGraphClient } from './graph/neo4jClient';
+import { RocketRideClient } from './pipelines/rocketrideClient';
 
 let rewindInstance: RewindInstance | null = null;
 
@@ -15,6 +16,7 @@ class RewindInstance {
   private contextManager: ContextManager;
   private panelProvider: RewindPanelProvider;
   private neo4j: Neo4jGraphClient;
+  private rocketride: RocketRideClient;
 
   constructor(
     context: vscode.ExtensionContext,
@@ -31,12 +33,17 @@ class RewindInstance {
     const neo4jPassword = vscode.workspace.getConfiguration('rewindai').get<string>('neo4jPassword') || 'password';
     this.neo4j.connect(neo4jUri, neo4jUser, neo4jPassword);
 
+    // Connect to RocketRide AI pipelines (non-blocking — extension works without it)
+    this.rocketride = new RocketRideClient(workspaceRoot);
+    this.rocketride.checkConnection();
+
     // Register the RewindAI panel (shows as its own tab next to Terminal)
     this.panelProvider = new RewindPanelProvider(
       context.extensionUri,
       this.contextManager,
       workspaceRoot,
       this.neo4j,
+      this.rocketride,
     );
     context.subscriptions.push(
       vscode.window.registerWebviewViewProvider(

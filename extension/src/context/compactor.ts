@@ -13,12 +13,15 @@
 
 import * as fs from 'fs';
 import * as path from 'path';
+import { RocketRideClient } from '../pipelines/rocketrideClient';
 
 export class SessionCompactor {
   private sessionsDir: string;
+  private rocketride?: RocketRideClient;
 
-  constructor(workspaceRoot: string, _compactionThreshold: number = 1) {
+  constructor(workspaceRoot: string, _compactionThreshold: number = 1, rocketride?: RocketRideClient) {
     this.sessionsDir = path.join(workspaceRoot, '.rewind', 'sessions');
+    this.rocketride = rocketride;
   }
 
   /** Always compact when there are sessions. */
@@ -173,6 +176,34 @@ export class SessionCompactor {
       lines.push('## Errors Encountered');
       for (const err of allErrors.slice(0, 5)) { lines.push(`- ${err}`); }
       lines.push('');
+    }
+
+    // Try RocketRide LLM compression for a denser summary
+    if (this.rocketride?.isConnected()) {
+      try {
+        const compressed = await this.rocketride.compressContext(
+          sessionSummaries.map((s, i) => ({
+            title: s.replace(/^- \*\*(.+?)\*\*.*/, '$1'),
+            summary: s,
+            decisions: allDecisions.filter(d => d.session === s).map(d => d.content),
+            filesChanged: allFileChanges.filter(f => f.session === s).map(f => f.path),
+          }))
+        );
+        if (compressed) {
+          console.log('RewindAI: RocketRide compressed context successfully');
+          lines.push('');
+          lines.push('## AI-Compressed Summary');
+          lines.push(compressed.summary);
+          if (compressed.openIssues.length > 0) {
+            lines.push('');
+            lines.push('### Open Issues');
+            for (const issue of compressed.openIssues) { lines.push(`- ${issue}`); }
+          }
+        }
+      } catch (e: unknown) {
+        const msg = e instanceof Error ? e.message : String(e);
+        console.log('RewindAI: RocketRide compression skipped:', msg);
+      }
     }
 
     // Write to the single rolling summary file

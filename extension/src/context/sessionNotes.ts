@@ -118,6 +118,26 @@ export class SessionNoteGenerator {
     this.currentFilesModified.set(filePath, { path: filePath, type: changeType });
   }
 
+  /** Get tool call summaries for RocketRide enrichment. */
+  // eslint-disable-next-line @typescript-eslint/no-explicit-any
+  getToolCallSummaries(): Array<{ name: string; input: any; result: string }> {
+    const summaries: Array<{ name: string; input: any; result: string }> = [];
+    for (let i = 0; i < this.currentEvents.length; i++) {
+      const event = this.currentEvents[i];
+      if (event.type === 'tool_call' && event.toolName) {
+        const nextResult = this.currentEvents.find(
+          (e, j) => j > i && e.type === 'tool_result' && e.toolName === event.toolName
+        );
+        summaries.push({
+          name: event.toolName,
+          input: event.toolInput || {},
+          result: nextResult?.content || '',
+        });
+      }
+    }
+    return summaries;
+  }
+
   /** Record a decision made during the session. */
   recordDecision(content: string, rationale: string): void {
     this.currentDecisions.push({ content, rationale });

@@ -5,6 +5,7 @@ import { AgentLoop } from '../agent/loop';
 import { SessionNoteGenerator } from '../context/sessionNotes';
 import { CommitSuggester } from '../context/commitSuggester';
 import { Neo4jGraphClient } from '../graph/neo4jClient';
+import { RocketRideClient } from '../pipelines/rocketrideClient';
 
 /**
  * Provides the RewindAI webview panel that appears as its own tab
@@ -20,6 +21,7 @@ export class RewindPanelProvider implements vscode.WebviewViewProvider {
     private readonly contextManager: ContextManager,
     private readonly workspaceRoot: string,
     private readonly neo4j?: Neo4jGraphClient,
+    private readonly rocketride?: RocketRideClient,
   ) {}
 
   resolveWebviewView(
@@ -151,6 +153,7 @@ export class RewindPanelProvider implements vscode.WebviewViewProvider {
       toolExecutor,
       this.contextManager,
       this.workspaceRoot,
+      this.rocketride,
     );
 
     try {
