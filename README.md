@@ -193,7 +193,7 @@ docker compose up -d
 
 This starts:
 - **Neo4j** on ports 7474 (browser) and 7687 (bolt)
-- **RocketRide** on port 5565
+- **RocketRide** on port 5565 (requires access to the RocketRide Docker image — the extension works without it)
 
 Verify:
 ```bash
