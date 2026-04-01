@@ -3,6 +3,7 @@ import { ContextManager } from '../context/manager';
 import { ToolExecutor } from '../tools/executor';
 import { AgentLoop } from '../agent/loop';
 import { SessionNoteGenerator } from '../context/sessionNotes';
+import { CommitSuggester } from '../context/commitSuggester';
 
 /**
  * Provides the RewindAI webview panel that appears as its own tab
@@ -116,6 +117,17 @@ export class RewindPanelProvider implements vscode.WebviewViewProvider {
       return;
     }
 
+    // Detect commit suggestion requests
+    const suggestPatterns = [
+      /(?:go back to|revert to|checkout when|switch to when|find the commit|which commit|suggest.*commit)/i,
+      /(?:i want the version|take me back|before we added|when we had|without the)/i,
+    ];
+    const wantsSuggestion = text.trim().startsWith('/suggest') || suggestPatterns.some(p => p.test(text));
+    if (wantsSuggestion) {
+      await this.handleCommitSuggestion(text.replace(/^\/suggest\s*/i, ''));
+      return;
+    }
+
     this.webviewView?.webview.postMessage({ type: 'message', role: 'user', content: text });
     this.webviewView?.webview.postMessage({ type: 'typing', show: true });
 
@@ -225,6 +237,54 @@ export class RewindPanelProvider implements vscode.WebviewViewProvider {
     output += '\nThey are automatically loaded as context when you return to a commit.';
 
     this.webviewView?.webview.postMessage({ type: 'message', role: 'assistant', content: output });
+  }
+
+  private async handleCommitSuggestion(query: string): Promise<void> {
+    this.webviewView?.webview.postMessage({ type: 'message', role: 'user', content: query });
+    this.webviewView?.webview.postMessage({ type: 'typing', show: true });
+
+    const suggester = new CommitSuggester(this.workspaceRoot);
+    const suggestions = await suggester.suggest(query);
+
+    this.webviewView?.webview.postMessage({ type: 'typing', show: false });
+
+    if (suggestions.length === 0) {
+      this.webviewView?.webview.postMessage({
+        type: 'message', role: 'assistant',
+        content: 'No matching commits found.\n\nI searched through all commits and their saved context but couldn\'t find a good match. Try being more specific — mention file names, features, or decisions.',
+      });
+      return;
+    }
+
+    let response = 'Suggested commits to checkout:\n\n';
+
+    for (let i = 0; i < suggestions.length; i++) {
+      const s = suggestions[i];
+      const rank = i === 0 ? '1.' : i === 1 ? '2.' : '3.';
+      response += `${rank} ${s.sha.slice(0, 7)} — ${s.message}\n`;
+      response += `   Score: ${s.score.toFixed(1)} | Branch: ${s.branch}\n`;
+
+      if (s.matchReasons.length > 0) {
+        response += '   Matched because:\n';
+        for (const reason of s.matchReasons.slice(0, 3)) {
+          response += `   - ${reason}\n`;
+        }
+      }
+
+      if (s.decisions && s.decisions.length > 0) {
+        response += '   Decisions at this commit:\n';
+        for (const d of s.decisions.slice(0, 2)) {
+          response += `   - ${d.slice(0, 80)}\n`;
+        }
+      }
+
+      response += '\n';
+    }
+
+    response += `To checkout, run in terminal: git checkout ${suggestions[0].sha.slice(0, 7)}\n`;
+    response += 'RewindAI will automatically restore the context for that commit.';
+
+    this.webviewView?.webview.postMessage({ type: 'message', role: 'assistant', content: response });
   }
 
   private sendStatus(): void {
