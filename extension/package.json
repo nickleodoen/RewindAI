@@ -48,7 +48,10 @@
       "properties": {
         "rewindai.provider": {
           "type": "string",
-          "enum": ["anthropic", "openai"],
+          "enum": [
+            "anthropic",
+            "openai"
+          ],
           "default": "anthropic",
           "description": "Which LLM API to use. Anthropic = Claude, OpenAI = GPT.",
           "enumDescriptions": [
@@ -70,6 +73,21 @@
           "type": "string",
           "default": "http://localhost:8000",
           "description": "RewindAI backend URL for Neo4j context indexing (optional — works without backend)"
+        },
+        "rewindai.neo4jUri": {
+          "type": "string",
+          "default": "bolt://localhost:7687",
+          "description": "Neo4j connection URI"
+        },
+        "rewindai.neo4jUser": {
+          "type": "string",
+          "default": "neo4j",
+          "description": "Neo4j username"
+        },
+        "rewindai.neo4jPassword": {
+          "type": "string",
+          "default": "password",
+          "description": "Neo4j password"
         }
       }
     }
@@ -83,5 +101,8 @@
     "@types/node": "^20.0.0",
     "@types/vscode": "^1.93.0",
     "typescript": "^5.5.0"
+  },
+  "dependencies": {
+    "neo4j-driver": "^6.0.1"
   }
 }

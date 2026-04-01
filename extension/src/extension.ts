@@ -5,6 +5,7 @@ import { RewindPanelProvider } from './chat/panelProvider';
 import { GitWatcher } from './git/watcher';
 import { ContextManager } from './context/manager';
 import { BackendClient } from './backend/client';
+import { Neo4jGraphClient } from './graph/neo4jClient';
 
 let rewindInstance: RewindInstance | null = null;
 
@@ -13,6 +14,7 @@ class RewindInstance {
   private gitWatcher: GitWatcher;
   private contextManager: ContextManager;
   private panelProvider: RewindPanelProvider;
+  private neo4j: Neo4jGraphClient;
 
   constructor(
     context: vscode.ExtensionContext,
@@ -22,11 +24,19 @@ class RewindInstance {
     const backend = new BackendClient();
     this.contextManager = new ContextManager(workspaceRoot, backend);
 
+    // Connect to Neo4j (non-blocking — extension works without it)
+    this.neo4j = new Neo4jGraphClient();
+    const neo4jUri = vscode.workspace.getConfiguration('rewindai').get<string>('neo4jUri') || 'bolt://localhost:7687';
+    const neo4jUser = vscode.workspace.getConfiguration('rewindai').get<string>('neo4jUser') || 'neo4j';
+    const neo4jPassword = vscode.workspace.getConfiguration('rewindai').get<string>('neo4jPassword') || 'password';
+    this.neo4j.connect(neo4jUri, neo4jUser, neo4jPassword);
+
     // Register the RewindAI panel (shows as its own tab next to Terminal)
     this.panelProvider = new RewindPanelProvider(
       context.extensionUri,
       this.contextManager,
       workspaceRoot,
+      this.neo4j,
     );
     context.subscriptions.push(
       vscode.window.registerWebviewViewProvider(

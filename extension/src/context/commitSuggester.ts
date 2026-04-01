@@ -16,6 +16,7 @@
 import * as fs from 'fs';
 import * as path from 'path';
 import { exec } from 'child_process';
+import { Neo4jGraphClient } from '../graph/neo4jClient';
 
 export interface CommitSuggestion {
   sha: string;
@@ -33,8 +34,12 @@ export class CommitSuggester {
   private snapshotsDir: string;
   private sessionsDir: string;
 
-  constructor(workspaceRoot: string) {
+  // eslint-disable-next-line @typescript-eslint/no-explicit-any
+  private neo4j?: Neo4jGraphClient;
+
+  constructor(workspaceRoot: string, neo4j?: Neo4jGraphClient) {
     this.workspaceRoot = workspaceRoot;
+    this.neo4j = neo4j;
     this.snapshotsDir = path.join(workspaceRoot, '.rewind', 'snapshots');
     this.sessionsDir = path.join(workspaceRoot, '.rewind', 'sessions');
   }
@@ -44,6 +49,33 @@ export class CommitSuggester {
    * Returns up to 3 suggestions, ranked by relevance.
    */
   async suggest(query: string): Promise<CommitSuggestion[]> {
+    // TRY NEO4J FIRST — graph queries are faster and more powerful
+    if (this.neo4j?.isConnected()) {
+      try {
+        const keywords = [...this.extractKeywords(query.toLowerCase())];
+        if (keywords.length > 0) {
+          const results = await this.neo4j.findRelevantCommits(keywords);
+          if (results.length > 0) {
+            console.log('RewindAI: CommitSuggester using Neo4j graph query');
+            return results.map(r => ({
+              sha: r.sha,
+              message: r.message,
+              branch: 'main',
+              timestamp: '',
+              score: r.score,
+              matchReasons: r.matchedDecisions.map(d => `Decision: "${d.slice(0, 60)}"`),
+              summary: r.summary,
+              decisions: r.matchedDecisions,
+            }));
+          }
+        }
+      } catch (e: unknown) {
+        const msg = e instanceof Error ? e.message : String(e);
+        console.log('RewindAI: Neo4j query failed, falling back to file scan:', msg);
+      }
+    }
+
+    // FALLBACK: file-scanning logic
     const commits = await this.getGitLog();
     const snapshots = this.loadAllSnapshots();
     const scored: CommitSuggestion[] = [];

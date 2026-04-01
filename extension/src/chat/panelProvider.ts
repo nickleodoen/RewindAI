@@ -4,6 +4,7 @@ import { ToolExecutor } from '../tools/executor';
 import { AgentLoop } from '../agent/loop';
 import { SessionNoteGenerator } from '../context/sessionNotes';
 import { CommitSuggester } from '../context/commitSuggester';
+import { Neo4jGraphClient } from '../graph/neo4jClient';
 
 /**
  * Provides the RewindAI webview panel that appears as its own tab
@@ -18,6 +19,7 @@ export class RewindPanelProvider implements vscode.WebviewViewProvider {
     private readonly extensionUri: vscode.Uri,
     private readonly contextManager: ContextManager,
     private readonly workspaceRoot: string,
+    private readonly neo4j?: Neo4jGraphClient,
   ) {}
 
   resolveWebviewView(
@@ -243,7 +245,7 @@ export class RewindPanelProvider implements vscode.WebviewViewProvider {
     this.webviewView?.webview.postMessage({ type: 'message', role: 'user', content: query });
     this.webviewView?.webview.postMessage({ type: 'typing', show: true });
 
-    const suggester = new CommitSuggester(this.workspaceRoot);
+    const suggester = new CommitSuggester(this.workspaceRoot, this.neo4j);
     const suggestions = await suggester.suggest(query);
 
     this.webviewView?.webview.postMessage({ type: 'typing', show: false });
