@@ -121,6 +121,17 @@ export class RewindPanelProvider implements vscode.WebviewViewProvider {
       return;
     }
 
+    if (text.trim() === '/graph') {
+      await this.handleGraph();
+      return;
+    }
+
+    if (text.trim().startsWith('/why')) {
+      const fileArg = text.trim().replace(/^\/why\s*/, '').trim();
+      await this.handleWhy(fileArg);
+      return;
+    }
+
     // Detect commit suggestion requests
     const suggestPatterns = [
       /(?:go back to|revert to|checkout when|switch to when|find the commit|which commit|suggest.*commit)/i,
@@ -290,6 +301,122 @@ export class RewindPanelProvider implements vscode.WebviewViewProvider {
     response += 'RewindAI will automatically restore the context for that commit.';
 
     this.webviewView?.webview.postMessage({ type: 'message', role: 'assistant', content: response });
+  }
+
+  /**
+   * /graph — Show Neo4j graph stats and connection status.
+   */
+  private async handleGraph(): Promise<void> {
+    this.webviewView?.webview.postMessage({ type: 'message', role: 'user', content: '/graph' });
+    this.webviewView?.webview.postMessage({ type: 'typing', show: true });
+
+    let output = '**Graph Database Status**\n\n';
+
+    if (!this.neo4j?.isConnected()) {
+      output += 'Neo4j: **Not connected**\n\n';
+      output += 'Start Neo4j with: `docker compose up -d neo4j`\n';
+      output += 'Or configure the URI in settings: `rewindai.neo4jUri`';
+    } else {
+      try {
+        const stats = await this.neo4j.getStats();
+        output += `Neo4j: **Connected**\n\n`;
+        output += `- Commits indexed: **${stats.commits}**\n`;
+        output += `- Sessions indexed: **${stats.sessions}**\n`;
+        output += `- Decisions tracked: **${stats.decisions}**\n`;
+        output += `- Files tracked: **${stats.files}**\n`;
+      } catch {
+        output += 'Neo4j: **Connected** but query failed\n';
+      }
+    }
+
+    output += '\n\n';
+    output += `RocketRide: **${this.rocketride?.isConnected() ? 'Connected' : 'Not connected'}**\n`;
+    if (!this.rocketride?.isConnected()) {
+      output += 'Start RocketRide with: `docker compose up -d rocketride`';
+    }
+
+    this.webviewView?.webview.postMessage({ type: 'typing', show: false });
+    this.webviewView?.webview.postMessage({ type: 'message', role: 'assistant', content: output });
+  }
+
+  /**
+   * /why <file> — Show the decision chain and commit history for a file using Neo4j.
+   */
+  private async handleWhy(fileArg: string): Promise<void> {
+    this.webviewView?.webview.postMessage({ type: 'message', role: 'user', content: `/why ${fileArg}` });
+    this.webviewView?.webview.postMessage({ type: 'typing', show: true });
+
+    if (!fileArg) {
+      this.webviewView?.webview.postMessage({ type: 'typing', show: false });
+      this.webviewView?.webview.postMessage({
+        type: 'message', role: 'assistant',
+        content: 'Usage: `/why <file>` — Shows why a file exists and the decisions that shaped it.\n\nExample: `/why src/auth/middleware.ts`',
+      });
+      return;
+    }
+
+    let output = `**Why does \`${fileArg}\` exist?**\n\n`;
+
+    if (!this.neo4j?.isConnected()) {
+      // Fallback: search snapshots on disk
+      output += '_Neo4j not connected — using file-based search_\n\n';
+      const suggester = new CommitSuggester(this.workspaceRoot);
+      const results = await suggester.suggest(fileArg);
+      if (results.length > 0) {
+        output += 'Commits that mention this file:\n\n';
+        for (const r of results.slice(0, 5)) {
+          output += `- **${r.sha.slice(0, 7)}** — ${r.message}\n`;
+          if (r.decisions && r.decisions.length > 0) {
+            for (const d of r.decisions.slice(0, 2)) {
+              output += `  - Decision: ${d.slice(0, 80)}\n`;
+            }
+          }
+        }
+      } else {
+        output += 'No matching context found for this file.';
+      }
+    } else {
+      try {
+        // Get commits that touched this file
+        const commits = await this.neo4j.findCommitsForFile(fileArg);
+        if (commits.length > 0) {
+          output += `**Commits that discussed this file (${commits.length}):**\n\n`;
+          for (const c of commits.slice(0, 8)) {
+            output += `- **${c.sha.slice(0, 7)}** — ${c.message}\n`;
+            if (c.decisions && c.decisions.length > 0) {
+              for (const d of c.decisions.slice(0, 2)) {
+                output += `  - Decision: ${d.slice(0, 80)}\n`;
+              }
+            }
+          }
+          output += '\n';
+
+          // Trace decision chains for the first decision found
+          const firstDecision = commits.flatMap(c => c.decisions || []).find(d => d);
+          if (firstDecision) {
+            const chain = await this.neo4j.getDecisionChain(firstDecision.slice(0, 50));
+            if (chain.length > 1) {
+              output += `**Decision chain:**\n\n`;
+              for (const d of chain) {
+                const indent = '  '.repeat(d.depth);
+                output += `${indent}- ${d.content}\n`;
+                if (d.commitSha) {
+                  output += `${indent}  _(at ${d.commitSha.slice(0, 7)})_\n`;
+                }
+              }
+            }
+          }
+        } else {
+          output += 'No graph data found for this file. It may not have been discussed in any tracked sessions.';
+        }
+      } catch (e: unknown) {
+        const msg = e instanceof Error ? e.message : String(e);
+        output += `Graph query failed: ${msg}`;
+      }
+    }
+
+    this.webviewView?.webview.postMessage({ type: 'typing', show: false });
+    this.webviewView?.webview.postMessage({ type: 'message', role: 'assistant', content: output });
   }
 
   private sendStatus(): void {
