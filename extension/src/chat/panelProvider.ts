@@ -6,7 +6,7 @@ import { AgentLoop } from '../agent/loop';
 /**
  * Provides the RewindAI webview panel that appears as its own tab
  * in the bottom panel area (next to Terminal, Claude Code, etc.).
- * Now connects to the AgentLoop for full agentic coding assistance.
+ * Includes built-in setup UI for API key configuration.
  */
 export class RewindPanelProvider implements vscode.WebviewViewProvider {
   public static readonly viewType = 'rewindai.panel';
@@ -43,42 +43,64 @@ export class RewindPanelProvider implements vscode.WebviewViewProvider {
         case 'getHistory':
           this.sendHistory();
           break;
+        case 'getConfig':
+          this.sendConfig();
+          break;
+        case 'saveConfig':
+          await this.saveConfig(msg.provider, msg.apiKey, msg.model);
+          break;
       }
     });
 
     this.sendStatus();
+    // Send config so the UI knows whether to show setup screen
+    setTimeout(() => this.sendConfig(), 100);
   }
 
   notifyContextChanged(commitSha: string, branch: string, restored: boolean): void {
-    this.webviewView?.webview.postMessage({
-      type: 'contextChanged',
-      commitSha,
-      branch,
-      restored,
-    });
+    this.webviewView?.webview.postMessage({ type: 'contextChanged', commitSha, branch, restored });
     this.sendStatus();
   }
 
   notifySnapshotSaved(commitSha: string, commitMessage: string): void {
+    this.webviewView?.webview.postMessage({ type: 'snapshotSaved', commitSha, commitMessage });
+  }
+
+  private async saveConfig(provider: string, apiKey: string, model: string): Promise<void> {
+    const config = vscode.workspace.getConfiguration('rewindai');
+    await config.update('provider', provider, vscode.ConfigurationTarget.Global);
+    await config.update('apiKey', apiKey, vscode.ConfigurationTarget.Global);
+    if (model) {
+      await config.update('model', model, vscode.ConfigurationTarget.Global);
+    }
+    this.webviewView?.webview.postMessage({ type: 'configSaved', success: true });
+    this.sendConfig();
+    vscode.window.showInformationMessage('RewindAI: API key saved. You\'re ready to go!');
+  }
+
+  private sendConfig(): void {
+    const config = vscode.workspace.getConfiguration('rewindai');
+    const provider = config.get<string>('provider') || 'anthropic';
+    const apiKey = config.get<string>('apiKey') || '';
+    const model = config.get<string>('model') || '';
     this.webviewView?.webview.postMessage({
-      type: 'snapshotSaved',
-      commitSha,
-      commitMessage,
+      type: 'config',
+      provider,
+      hasApiKey: !!apiKey,
+      apiKeyPreview: apiKey ? apiKey.substring(0, 8) + '...' + apiKey.substring(apiKey.length - 4) : '',
+      model,
     });
   }
 
   private async handleChat(text: string): Promise<void> {
-    // Handle /whatchanged command locally
     if (text.trim().startsWith('/whatchanged')) {
       await this.handleWhatChanged();
       return;
     }
 
-    // Show user message immediately
     this.webviewView?.webview.postMessage({ type: 'message', role: 'user', content: text });
     this.webviewView?.webview.postMessage({ type: 'typing', show: true });
 
-    // Get LLM config from VS Code settings
     const config = vscode.workspace.getConfiguration('rewindai');
     const provider = (config.get<string>('provider') || 'anthropic') as 'anthropic' | 'openai';
     const apiKey = config.get<string>('apiKey') || process.env.ANTHROPIC_API_KEY || '';
@@ -86,16 +108,11 @@ export class RewindPanelProvider implements vscode.WebviewViewProvider {
 
     if (!apiKey) {
       this.webviewView?.webview.postMessage({ type: 'typing', show: false });
-      this.webviewView?.webview.postMessage({
-        type: 'message',
-        role: 'assistant',
-        content: 'No API key configured.\n\nOpen VS Code Settings (Cmd+,) and search for "rewindai":\n• rewindai.apiKey — your Anthropic or OpenAI API key\n• rewindai.provider — "anthropic" or "openai"\n• rewindai.model — e.g. "claude-sonnet-4-6" or "gpt-4o"',
-        isError: true,
-      });
+      // Show setup screen
+      this.webviewView?.webview.postMessage({ type: 'showSetup' });
       return;
     }
 
-    // Create agent components
     const toolExecutor = new ToolExecutor(this.workspaceRoot, this.contextManager);
     const agentLoop = new AgentLoop(
       { provider, apiKey, model },
@@ -103,29 +120,20 @@ export class RewindPanelProvider implements vscode.WebviewViewProvider {
       this.contextManager,
     );
 
-    // Run the agent — it streams events back
     try {
       await agentLoop.run(text, (event) => {
         switch (event.type) {
           case 'text':
-            this.webviewView?.webview.postMessage({
-              type: 'message', role: 'assistant', content: event.content,
-            });
+            this.webviewView?.webview.postMessage({ type: 'message', role: 'assistant', content: event.content });
             break;
           case 'tool_call':
-            this.webviewView?.webview.postMessage({
-              type: 'tool', action: 'call', toolName: event.toolName, content: event.content,
-            });
+            this.webviewView?.webview.postMessage({ type: 'tool', action: 'call', toolName: event.toolName, content: event.content });
             break;
           case 'tool_result':
-            this.webviewView?.webview.postMessage({
-              type: 'tool', action: 'result', toolName: event.toolName, content: event.content, isError: event.isError,
-            });
+            this.webviewView?.webview.postMessage({ type: 'tool', action: 'result', toolName: event.toolName, content: event.content, isError: event.isError });
             break;
           case 'error':
-            this.webviewView?.webview.postMessage({
-              type: 'message', role: 'assistant', content: event.content, isError: true,
-            });
+            this.webviewView?.webview.postMessage({ type: 'message', role: 'assistant', content: event.content, isError: true });
             break;
           case 'thinking':
           case 'done':
@@ -134,9 +142,7 @@ export class RewindPanelProvider implements vscode.WebviewViewProvider {
       });
     } catch (error: unknown) {
       const msg = error instanceof Error ? error.message : String(error);
-      this.webviewView?.webview.postMessage({
-        type: 'message', role: 'assistant', content: `Agent error: ${msg}`, isError: true,
-      });
+      this.webviewView?.webview.postMessage({ type: 'message', role: 'assistant', content: `Agent error: ${msg}`, isError: true });
     }
 
     this.webviewView?.webview.postMessage({ type: 'typing', show: false });
@@ -150,7 +156,6 @@ export class RewindPanelProvider implements vscode.WebviewViewProvider {
     const scratchpad = this.contextManager.getScratchpad();
     const messages = this.contextManager.getMessages();
     const summary = this.contextManager.getCurrentContextSummary();
-
     let response = '';
 
     if (scratchpad.length > 0) {
@@ -158,17 +163,12 @@ export class RewindPanelProvider implements vscode.WebviewViewProvider {
       for (const note of scratchpad) { response += `  ${note}\n`; }
       response += '\n';
     }
-
     if (messages.length > 0) {
       const userMsgs = messages.filter(m => m.role === 'user');
       response += `Conversation: ${messages.length} messages (${userMsgs.length} from you)\n`;
     }
-
     if (summary) { response += '\n' + summary; }
-
-    if (!response) {
-      response = 'No changes tracked yet. Start chatting and I\'ll track decisions and context automatically.';
-    }
+    if (!response) { response = 'No changes tracked yet. Start chatting and I\'ll track decisions and context automatically.'; }
 
     this.webviewView?.webview.postMessage({ type: 'message', role: 'assistant', content: response });
     this.webviewView?.webview.postMessage({ type: 'typing', show: false });
@@ -178,7 +178,6 @@ export class RewindPanelProvider implements vscode.WebviewViewProvider {
     const messages = this.contextManager.getMessages();
     const summary = this.contextManager.getCurrentContextSummary();
     const snapshots = this.contextManager.listSnapshots();
-
     this.webviewView?.webview.postMessage({
       type: 'status',
       messageCount: messages.length,
@@ -234,11 +233,10 @@ export class RewindPanelProvider implements vscode.WebviewViewProvider {
     overflow: hidden;
   }
 
-  /* Branded header */
+  /* Header */
   .header {
     display: flex;
     align-items: center;
-    gap: 6px;
     padding: 4px 10px;
     background: var(--vscode-titleBar-activeBackground, var(--vscode-sideBar-background));
     border-bottom: 1px solid var(--vscode-panel-border, var(--vscode-widget-border));
@@ -248,20 +246,25 @@ export class RewindPanelProvider implements vscode.WebviewViewProvider {
     letter-spacing: 0.3px;
   }
   .header .brand { color: var(--vscode-textLink-foreground, #3794ff); }
-  .header .version { opacity: 0.4; font-weight: normal; font-size: 10px; }
+  .header .version { opacity: 0.4; font-weight: normal; font-size: 10px; margin-left: 6px; }
+  .header .spacer { flex: 1; }
+  .header .gear-btn {
+    background: none; border: none; color: var(--vscode-foreground); cursor: pointer;
+    opacity: 0.5; font-size: 14px; padding: 2px 4px; line-height: 1;
+  }
+  .header .gear-btn:hover { opacity: 1; }
+  .header .config-badge {
+    font-size: 9px; padding: 1px 5px; border-radius: 3px; margin-left: 6px; font-weight: normal;
+  }
+  .header .config-badge.ok { background: rgba(78, 201, 176, 0.2); color: var(--vscode-charts-green, #4ec9b0); }
+  .header .config-badge.missing { background: rgba(244, 68, 68, 0.2); color: var(--vscode-errorForeground, #f44); }
 
   /* Status bar */
   .status-bar {
-    display: flex;
-    align-items: center;
-    gap: 8px;
-    padding: 3px 10px;
+    display: flex; align-items: center; gap: 8px; padding: 3px 10px;
     background: var(--vscode-titleBar-activeBackground, var(--vscode-sideBar-background));
     border-bottom: 1px solid var(--vscode-panel-border, var(--vscode-widget-border));
-    font-size: 10px;
-    flex-shrink: 0;
-    flex-wrap: wrap;
-    min-height: 20px;
+    font-size: 10px; flex-shrink: 0; flex-wrap: wrap; min-height: 20px;
   }
   .status-bar .stat { display: flex; align-items: center; gap: 3px; white-space: nowrap; }
   .status-bar .dot { width: 6px; height: 6px; border-radius: 50%; background: var(--vscode-charts-green, #4ec9b0); display: inline-block; flex-shrink: 0; }
@@ -287,6 +290,68 @@ export class RewindPanelProvider implements vscode.WebviewViewProvider {
   .panel { flex: 1; overflow: hidden; display: none; flex-direction: column; min-height: 0; }
   .panel.active { display: flex; }
 
+  /* ── Setup / Config Screen ── */
+  .setup-screen {
+    flex: 1; overflow-y: auto; padding: 16px; display: flex; flex-direction: column; gap: 14px;
+  }
+  .setup-screen h2 {
+    font-size: 14px; font-weight: 600; color: var(--vscode-textLink-foreground, #3794ff);
+  }
+  .setup-screen p { font-size: 12px; line-height: 1.5; opacity: 0.8; }
+  .setup-screen label {
+    font-size: 11px; font-weight: 600; display: block; margin-bottom: 4px;
+    text-transform: uppercase; letter-spacing: 0.3px; opacity: 0.7;
+  }
+  .setup-screen .field { display: flex; flex-direction: column; gap: 2px; }
+  .setup-screen .field-hint { font-size: 10px; opacity: 0.5; margin-top: 2px; }
+  .setup-screen select,
+  .setup-screen input[type="text"],
+  .setup-screen input[type="password"] {
+    width: 100%;
+    background: var(--vscode-input-background);
+    color: var(--vscode-input-foreground);
+    border: 1px solid var(--vscode-input-border, var(--vscode-widget-border, rgba(255,255,255,0.1)));
+    border-radius: 4px;
+    padding: 6px 8px;
+    font-family: inherit;
+    font-size: 12px;
+    outline: none;
+  }
+  .setup-screen select:focus,
+  .setup-screen input:focus {
+    border-color: var(--vscode-focusBorder, #007acc);
+  }
+  .setup-screen select { cursor: pointer; }
+  .setup-screen .btn-primary {
+    background: var(--vscode-button-background); color: var(--vscode-button-foreground);
+    border: none; border-radius: 4px; padding: 8px 16px; cursor: pointer;
+    font-size: 12px; font-weight: 600; width: 100%; margin-top: 4px;
+  }
+  .setup-screen .btn-primary:hover { background: var(--vscode-button-hoverBackground); }
+  .setup-screen .btn-primary:disabled { opacity: 0.5; cursor: not-allowed; }
+  .setup-screen .links {
+    font-size: 11px; display: flex; gap: 12px; flex-wrap: wrap;
+  }
+  .setup-screen .links a {
+    color: var(--vscode-textLink-foreground, #3794ff); text-decoration: none; cursor: pointer;
+  }
+  .setup-screen .links a:hover { text-decoration: underline; }
+  .setup-screen .success-msg {
+    background: rgba(78, 201, 176, 0.1); border: 1px solid var(--vscode-charts-green, #4ec9b0);
+    border-radius: 4px; padding: 8px 10px; font-size: 12px; display: none;
+  }
+  .setup-screen .current-config {
+    background: var(--vscode-textBlockQuote-background, rgba(255,255,255,0.04));
+    border-radius: 4px; padding: 8px 10px; font-size: 11px;
+    font-family: var(--vscode-editor-font-family, monospace);
+  }
+  .setup-screen .current-config .row { display: flex; justify-content: space-between; padding: 2px 0; }
+  .setup-screen .current-config .row .k { opacity: 0.5; }
+  .setup-screen .toggle-vis {
+    background: none; border: none; color: var(--vscode-textLink-foreground, #3794ff);
+    cursor: pointer; font-size: 11px; padding: 0; margin-left: 6px;
+  }
+
   /* Messages */
   .messages { flex: 1; overflow-y: auto; padding: 8px; min-height: 0; }
   .msg {
@@ -305,7 +370,7 @@ export class RewindPanelProvider implements vscode.WebviewViewProvider {
   .msg.error { border-left-color: var(--vscode-errorForeground, #f44); opacity: 0.8; }
   .msg .role { font-size: 9px; opacity: 0.5; margin-bottom: 2px; text-transform: uppercase; letter-spacing: 0.5px; }
 
-  /* Tool calls and results */
+  /* Tool blocks */
   .tool-block {
     margin: 4px 0; padding: 6px 10px; border-radius: 4px;
     font-size: 11px; font-family: var(--vscode-editor-font-family, monospace);
@@ -378,7 +443,10 @@ export class RewindPanelProvider implements vscode.WebviewViewProvider {
 
 <div class="header">
   <span class="brand">RewindAI</span>
-  <span class="version">v0.3 — Agent</span>
+  <span class="version">v0.3</span>
+  <span class="config-badge missing" id="configBadge">No API Key</span>
+  <span class="spacer"></span>
+  <button class="gear-btn" id="gearBtn" title="Settings">&#9881;</button>
 </div>
 
 <div class="status-bar">
@@ -391,8 +459,10 @@ export class RewindPanelProvider implements vscode.WebviewViewProvider {
 <div class="tab-bar">
   <button class="tab active" data-panel="chat">Chat</button>
   <button class="tab" data-panel="history">History</button>
+  <button class="tab" data-panel="setup">Settings</button>
 </div>
 
+<!-- ── Chat Panel ── -->
 <div class="panel active" id="panel-chat">
   <div class="messages" id="messages">
     <div class="msg assistant">
@@ -401,9 +471,7 @@ export class RewindPanelProvider implements vscode.WebviewViewProvider {
 
 I can read, edit, and create files, run terminal commands, and search your codebase.
 
-When you commit, I save our context. When you checkout a different commit, I remember what we discussed there.
-
-<em style="opacity:0.6">Configure your API key: Settings (Cmd+,) > search "rewindai"</em></div>
+When you commit, I save our context. When you checkout a different commit, I remember what we discussed there.</div>
   </div>
   <div class="typing" id="typing">Thinking...</div>
   <div class="input-area">
@@ -412,9 +480,57 @@ When you commit, I save our context. When you checkout a different commit, I rem
   </div>
 </div>
 
+<!-- ── History Panel ── -->
 <div class="panel" id="panel-history">
   <div class="history-list" id="historyList">
     <div class="empty-state">No snapshots yet. Chat and commit to save context.</div>
+  </div>
+</div>
+
+<!-- ── Setup Panel ── -->
+<div class="panel" id="panel-setup">
+  <div class="setup-screen">
+    <h2>Configure RewindAI</h2>
+    <p>Enter your API key to start coding with AI. Your key is stored locally in VS Code settings — never sent anywhere except the API you choose.</p>
+
+    <div class="field">
+      <label for="cfgProvider">Provider</label>
+      <select id="cfgProvider">
+        <option value="anthropic">Anthropic (Claude)</option>
+        <option value="openai">OpenAI (GPT)</option>
+      </select>
+    </div>
+
+    <div class="field">
+      <label for="cfgApiKey">API Key</label>
+      <div style="display:flex; align-items:center;">
+        <input type="password" id="cfgApiKey" placeholder="sk-ant-... or sk-..." style="flex:1;" />
+        <button class="toggle-vis" id="toggleKeyVis">show</button>
+      </div>
+      <div class="field-hint" id="keyHint">Get a key from console.anthropic.com</div>
+    </div>
+
+    <div class="field">
+      <label for="cfgModel">Model (optional)</label>
+      <input type="text" id="cfgModel" placeholder="claude-sonnet-4-6" />
+      <div class="field-hint">Leave blank for default. Examples: claude-sonnet-4-6, claude-opus-4-6, gpt-4o</div>
+    </div>
+
+    <button class="btn-primary" id="saveConfigBtn">Save & Start Coding</button>
+
+    <div class="success-msg" id="successMsg">Settings saved! Switch to the Chat tab to start.</div>
+
+    <div class="current-config" id="currentConfig" style="display:none;">
+      <div style="font-weight:600; margin-bottom:4px; opacity:0.7;">Current Configuration</div>
+      <div class="row"><span class="k">Provider</span> <span id="curProvider">—</span></div>
+      <div class="row"><span class="k">API Key</span> <span id="curKey">—</span></div>
+      <div class="row"><span class="k">Model</span> <span id="curModel">—</span></div>
+    </div>
+
+    <div class="links">
+      <a id="linkAnthropic">Get Anthropic key</a>
+      <a id="linkOpenAI">Get OpenAI key</a>
+    </div>
   </div>
 </div>
 
@@ -429,16 +545,84 @@ When you commit, I save our context. When you checkout a different commit, I rem
   const historyList = document.getElementById('historyList');
   const toast = document.getElementById('toast');
 
+  // Config elements
+  const cfgProvider = document.getElementById('cfgProvider');
+  const cfgApiKey = document.getElementById('cfgApiKey');
+  const cfgModel = document.getElementById('cfgModel');
+  const saveConfigBtn = document.getElementById('saveConfigBtn');
+  const toggleKeyVis = document.getElementById('toggleKeyVis');
+  const keyHint = document.getElementById('keyHint');
+  const successMsg = document.getElementById('successMsg');
+  const currentConfig = document.getElementById('currentConfig');
+  const configBadge = document.getElementById('configBadge');
+  const gearBtn = document.getElementById('gearBtn');
+
+  let hasApiKey = false;
+
+  // ── Tab switching ──
+  function switchToPanel(panelName) {
+    document.querySelectorAll('.tab').forEach(t => t.classList.remove('active'));
+    document.querySelectorAll('.panel').forEach(p => p.classList.remove('active'));
+    const tab = document.querySelector('.tab[data-panel="' + panelName + '"]');
+    if (tab) tab.classList.add('active');
+    const panel = document.getElementById('panel-' + panelName);
+    if (panel) panel.classList.add('active');
+    if (panelName === 'history') vscode.postMessage({ type: 'getHistory' });
+    if (panelName === 'setup') vscode.postMessage({ type: 'getConfig' });
+  }
+
   document.querySelectorAll('.tab').forEach(tab => {
-    tab.addEventListener('click', () => {
-      document.querySelectorAll('.tab').forEach(t => t.classList.remove('active'));
-      document.querySelectorAll('.panel').forEach(p => p.classList.remove('active'));
-      tab.classList.add('active');
-      document.getElementById('panel-' + tab.dataset.panel).classList.add('active');
-      if (tab.dataset.panel === 'history') { vscode.postMessage({ type: 'getHistory' }); }
+    tab.addEventListener('click', () => switchToPanel(tab.dataset.panel));
+  });
+
+  // Gear button → settings tab
+  gearBtn.addEventListener('click', () => switchToPanel('setup'));
+
+  // ── Provider hint update ──
+  cfgProvider.addEventListener('change', () => {
+    const p = cfgProvider.value;
+    keyHint.textContent = p === 'anthropic'
+      ? 'Get a key from console.anthropic.com'
+      : 'Get a key from platform.openai.com';
+    cfgApiKey.placeholder = p === 'anthropic' ? 'sk-ant-api03-...' : 'sk-...';
+    cfgModel.placeholder = p === 'anthropic' ? 'claude-sonnet-4-6' : 'gpt-4o';
+  });
+
+  // ── Toggle key visibility ──
+  toggleKeyVis.addEventListener('click', () => {
+    const isPassword = cfgApiKey.type === 'password';
+    cfgApiKey.type = isPassword ? 'text' : 'password';
+    toggleKeyVis.textContent = isPassword ? 'hide' : 'show';
+  });
+
+  // ── Save config ──
+  saveConfigBtn.addEventListener('click', () => {
+    const key = cfgApiKey.value.trim();
+    if (!key) {
+      cfgApiKey.style.borderColor = 'var(--vscode-errorForeground, #f44)';
+      cfgApiKey.focus();
+      return;
+    }
+    cfgApiKey.style.borderColor = '';
+    saveConfigBtn.disabled = true;
+    saveConfigBtn.textContent = 'Saving...';
+    vscode.postMessage({
+      type: 'saveConfig',
+      provider: cfgProvider.value,
+      apiKey: key,
+      model: cfgModel.value.trim(),
     });
   });
 
+  // ── Link clicks ──
+  document.getElementById('linkAnthropic').addEventListener('click', () => {
+    vscode.postMessage({ type: 'chat', text: '' }); // no-op, just trigger
+  });
+  document.getElementById('linkOpenAI').addEventListener('click', () => {
+    vscode.postMessage({ type: 'chat', text: '' });
+  });
+
+  // ── Send message ──
   function send() {
     const text = inputEl.value.trim();
     if (!text) return;
@@ -446,7 +630,6 @@ When you commit, I save our context. When you checkout a different commit, I rem
     inputEl.style.height = '28px';
     vscode.postMessage({ type: 'chat', text });
   }
-
   sendBtn.addEventListener('click', send);
   inputEl.addEventListener('keydown', (e) => {
     if (e.key === 'Enter' && !e.shiftKey) { e.preventDefault(); send(); }
@@ -462,6 +645,7 @@ When you commit, I save our context. When you checkout a different commit, I rem
     setTimeout(() => toast.classList.remove('show'), 3000);
   }
 
+  // ── Handle messages from extension ──
   window.addEventListener('message', (event) => {
     const msg = event.data;
     switch (msg.type) {
@@ -495,6 +679,53 @@ When you commit, I save our context. When you checkout a different commit, I rem
         document.getElementById('snapCount').textContent = msg.snapshotCount;
         document.getElementById('contextStatus').textContent = msg.hasRestoredContext ? 'Restored' : 'Fresh';
         document.getElementById('statusDot').className = 'dot' + (msg.hasRestoredContext ? '' : ' inactive');
+        break;
+      case 'config': {
+        hasApiKey = msg.hasApiKey;
+        // Update badge
+        if (msg.hasApiKey) {
+          configBadge.textContent = msg.provider === 'anthropic' ? 'Claude' : 'GPT';
+          configBadge.className = 'config-badge ok';
+        } else {
+          configBadge.textContent = 'No API Key';
+          configBadge.className = 'config-badge missing';
+        }
+        // Update settings form
+        cfgProvider.value = msg.provider || 'anthropic';
+        if (msg.model) cfgModel.value = msg.model;
+        // Update current config display
+        if (msg.hasApiKey) {
+          currentConfig.style.display = 'block';
+          document.getElementById('curProvider').textContent = msg.provider;
+          document.getElementById('curKey').textContent = msg.apiKeyPreview;
+          document.getElementById('curModel').textContent = msg.model || '(default)';
+        } else {
+          currentConfig.style.display = 'none';
+        }
+        // If no API key, auto-switch to setup on first load
+        if (!msg.hasApiKey && document.querySelector('.tab[data-panel="chat"]').classList.contains('active')) {
+          // Only auto-switch if there are no messages yet (first load)
+          if (messagesEl.children.length <= 1) {
+            switchToPanel('setup');
+          }
+        }
+        break;
+      }
+      case 'configSaved': {
+        saveConfigBtn.disabled = false;
+        saveConfigBtn.textContent = 'Save & Start Coding';
+        successMsg.style.display = 'block';
+        cfgApiKey.value = '';
+        showToast('API key saved!');
+        // Auto-switch to chat after 1.5s
+        setTimeout(() => {
+          successMsg.style.display = 'none';
+          switchToPanel('chat');
+        }, 1500);
+        break;
+      }
+      case 'showSetup':
+        switchToPanel('setup');
         break;
       case 'history': {
         if (msg.items.length === 0) {
@@ -532,6 +763,7 @@ When you commit, I save our context. When you checkout a different commit, I rem
   }
 
   vscode.postMessage({ type: 'getStatus' });
+  vscode.postMessage({ type: 'getConfig' });
 </script>
 </body>
 </html>`;
