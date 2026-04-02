@@ -11,7 +11,7 @@ import * as path from 'path';
 import { exec } from 'child_process';
 
 export interface SessionEvent {
-  type: 'user_message' | 'assistant_text' | 'tool_call' | 'tool_result' | 'decision' | 'error';
+  type: 'user_message' | 'assistant_text' | 'tool_call' | 'tool_result' | 'decision' | 'error' | 'reasoning';
   timestamp: string;
   content: string;
   toolName?: string;
@@ -386,17 +386,36 @@ export class SessionNoteGenerator {
     lines.push('```');
     lines.push('');
 
+    // Reasoning chain — how the LLM thought through the problem
+    const reasoningEvents = note.events.filter(e => e.type === 'reasoning');
+    if (reasoningEvents.length > 0) {
+      lines.push('## LLM Reasoning');
+      lines.push('*How the AI approached this task:*');
+      lines.push('');
+      for (const r of reasoningEvents) {
+        lines.push(`> ${r.content.replace(/\n/g, '\n> ')}`);
+        lines.push('');
+      }
+      lines.push('');
+    }
+
     lines.push('## What Was Done');
     let stepNum = 1;
     for (const event of note.events) {
+      if (event.type === 'reasoning') {
+        lines.push(`\n*Thought process:* ${event.content.slice(0, 300)}\n`);
+      }
       if (event.type === 'tool_call' && event.toolName) {
         const inputStr = event.toolInput ? JSON.stringify(event.toolInput) : '';
-        const shortInput = inputStr.length > 100 ? inputStr.slice(0, 100) + '...' : inputStr;
+        const shortInput = inputStr.length > 150 ? inputStr.slice(0, 150) + '...' : inputStr;
         lines.push(`${stepNum}. **${event.toolName}** — ${shortInput}`);
         stepNum++;
       }
       if (event.type === 'tool_result' && event.isError) {
-        lines.push(`   - Error: ${event.content.slice(0, 200)}`);
+        lines.push(`   \u26a0\ufe0f Error: ${event.content.slice(0, 300)}`);
+      }
+      if (event.type === 'tool_result' && !event.isError && event.toolName === 'run_command') {
+        lines.push(`   Output: ${event.content.slice(0, 200)}`);
       }
     }
     if (stepNum === 1) { lines.push('Direct response — no tool calls needed.'); }

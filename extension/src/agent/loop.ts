@@ -63,6 +63,11 @@ ABOUT YOUR MEMORY:
 - If restored context is provided below, use it for continuity
 - If previous conversation history is shown, use it — files mentioned there exist
 
+MULTI-FILE EDITING:
+You can edit multiple files in a single response by making multiple tool calls.
+To refactor across files: read all relevant files first, then edit each one.
+Each edit_file call targets one file — make as many as needed.
+
 DO NOT:
 - Make changes without reading the file first
 - Run dangerous commands (rm -rf, etc.)
@@ -180,7 +185,14 @@ export class AgentLoop {
         if (block.type === 'text' && block.text) {
           fullAssistantText += block.text;
           onEvent({ type: 'text', content: block.text });
-          noteGen.recordEvent({ type: 'assistant_text', content: block.text });
+
+          // If this response also has tool calls, the text is REASONING
+          const hasToolCalls = response.content.some(b => b.type === 'tool_use');
+          if (hasToolCalls) {
+            noteGen.recordEvent({ type: 'reasoning', content: block.text });
+          } else {
+            noteGen.recordEvent({ type: 'assistant_text', content: block.text });
+          }
         }
 
         if (block.type === 'tool_use' && block.id && block.name && block.input) {
