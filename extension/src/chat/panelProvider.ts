@@ -111,37 +111,29 @@ export class RewindPanelProvider implements vscode.WebviewViewProvider {
   }
 
   private async handleChat(text: string): Promise<void> {
-    if (text.trim().startsWith('/whatchanged')) {
-      await this.handleWhatChanged();
+    // ── Production commands (visible to users) ──
+    if (text.trim().startsWith('/rewind ')) {
+      await this.handleRewind(text.replace('/rewind ', '').trim());
       return;
     }
+    if (text.trim() === '/context') { await this.handleContext(); return; }
+    if (text.trim() === '/export') { await this.handleExport(); return; }
+    if (text.trim() === '/forget') { await this.handleForget(); return; }
 
-    if (text.trim() === '/sessions' || text.trim() === '/notes') {
-      await this.handleSessions();
-      return;
-    }
-
-    if (text.trim() === '/graph') {
-      await this.handleGraph();
-      return;
-    }
-
+    // ── Internal/debug commands (still work, but hidden from UI) ──
+    if (text.trim().startsWith('/whatchanged')) { await this.handleWhatChanged(); return; }
+    if (text.trim() === '/sessions' || text.trim() === '/notes') { await this.handleSessions(); return; }
+    if (text.trim() === '/graph') { await this.handleGraph(); return; }
     if (text.trim().startsWith('/why')) {
       const fileArg = text.trim().replace(/^\/why\s*/, '').trim();
       await this.handleWhy(fileArg);
       return;
     }
-
-    // Detect commit suggestion requests
-    const suggestPatterns = [
-      /(?:go back to|revert to|checkout when|switch to when|find the commit|which commit|suggest.*commit)/i,
-      /(?:i want the version|take me back|before we added|when we had|without the)/i,
-    ];
-    const wantsSuggestion = text.trim().startsWith('/suggest') || suggestPatterns.some(p => p.test(text));
-    if (wantsSuggestion) {
-      await this.handleCommitSuggestion(text.replace(/^\/suggest\s*/i, ''));
+    if (text.trim().startsWith('/suggest ')) {
+      await this.handleRewind(text.replace('/suggest ', '').trim());
       return;
     }
+    if (text.trim() === '/status') { await this.handleContext(); return; }
 
     this.webviewView?.webview.postMessage({ type: 'message', role: 'user', content: text });
     this.webviewView?.webview.postMessage({ type: 'typing', show: true });
@@ -417,6 +409,272 @@ export class RewindPanelProvider implements vscode.WebviewViewProvider {
 
     this.webviewView?.webview.postMessage({ type: 'typing', show: false });
     this.webviewView?.webview.postMessage({ type: 'message', role: 'assistant', content: output });
+  }
+
+  // ══════════════════════════════════════════════════════
+  // Production commands: /rewind, /context, /export, /forget
+  // ══════════════════════════════════════════════════════
+
+  private async handleRewind(query: string): Promise<void> {
+    this.webviewView?.webview.postMessage({ type: 'message', role: 'user', content: `/rewind ${query}` });
+    this.webviewView?.webview.postMessage({ type: 'typing', show: true });
+
+    const suggester = new CommitSuggester(this.workspaceRoot, this.neo4j);
+    const suggestions = await suggester.suggest(query);
+
+    this.webviewView?.webview.postMessage({ type: 'typing', show: false });
+
+    if (suggestions.length === 0) {
+      this.webviewView?.webview.postMessage({
+        type: 'message', role: 'assistant',
+        content: `Couldn't find a commit matching "${query}". Try describing the feature or decision you want to go back to.`,
+      });
+      return;
+    }
+
+    const top = suggestions[0];
+    const contextFilePath = await this.generateMegaContext(top.sha, top.message);
+
+    let response = `**Found ${suggestions.length} matching commit${suggestions.length > 1 ? 's' : ''}:**\n\n`;
+
+    for (let i = 0; i < Math.min(suggestions.length, 3); i++) {
+      const s = suggestions[i];
+      const marker = i === 0 ? '\u2192' : ' ';
+      response += `${marker} \`${s.sha.slice(0, 7)}\` \u2014 ${s.message}\n`;
+      if (s.decisions && s.decisions.length > 0) {
+        response += `  Decisions: ${s.decisions.slice(0, 2).join('; ')}\n`;
+      }
+    }
+
+    response += `\n**To rewind:**\n`;
+    response += `\`\`\`\ngit checkout ${top.sha.slice(0, 7)}\n\`\`\`\n`;
+    response += `Your AI context will auto-restore when you checkout.\n\n`;
+
+    if (contextFilePath) {
+      response += `**Or use the context anywhere:**\n`;
+      response += `Context file saved \u2192 \`${contextFilePath}\`\n`;
+      response += `Open it and paste into Claude Code, ChatGPT, or any AI chat to continue from that point.`;
+    }
+
+    this.webviewView?.webview.postMessage({ type: 'message', role: 'assistant', content: response });
+  }
+
+  private async handleContext(): Promise<void> {
+    this.webviewView?.webview.postMessage({ type: 'message', role: 'user', content: '/context' });
+
+    const summary = this.contextManager.getCurrentContextSummary();
+    const messages = this.contextManager.getMessages();
+
+    if (!summary && messages.length <= 1) {
+      this.webviewView?.webview.postMessage({
+        type: 'message', role: 'assistant',
+        content: `**Fresh session** \u2014 no prior context loaded.\n\nStart chatting and I'll build up context. When you commit, everything gets saved automatically.`,
+      });
+      return;
+    }
+
+    let response = `**Current Context**\n\n`;
+    response += `Messages this session: ${messages.length}\n\n`;
+
+    const scratchpad = this.contextManager.getScratchpad();
+    const decisions = scratchpad.filter(n => n.includes('DECISION:'));
+    const edits = scratchpad.filter(n => n.includes('EDITED:') || n.includes('RAN:'));
+
+    if (decisions.length > 0) {
+      response += `**Decisions made:**\n`;
+      for (const d of decisions.slice(-5)) {
+        response += `\u2022 ${d.replace(/\[.*?\]\s*/, '').replace('DECISION: ', '')}\n`;
+      }
+      response += '\n';
+    }
+
+    if (edits.length > 0) {
+      response += `**Recent actions:**\n`;
+      for (const e of edits.slice(-5)) {
+        response += `\u2022 ${e.replace(/\[.*?\]\s*/, '')}\n`;
+      }
+      response += '\n';
+    }
+
+    if (summary) {
+      response += `*Context restored from a previous commit. I remember what we discussed.*`;
+    }
+
+    this.webviewView?.webview.postMessage({ type: 'message', role: 'assistant', content: response });
+  }
+
+  private async handleExport(): Promise<void> {
+    this.webviewView?.webview.postMessage({ type: 'message', role: 'user', content: '/export' });
+
+    const filePath = await this.generateMegaContext('current', 'current session');
+
+    if (filePath) {
+      this.webviewView?.webview.postMessage({
+        type: 'message', role: 'assistant',
+        content: `**Context exported!**\n\n` +
+          `File: \`${filePath}\`\n\n` +
+          `This file contains your full conversation context, decisions, and file changes. ` +
+          `You can:\n` +
+          `\u2022 Paste it into a new Claude Code session\n` +
+          `\u2022 Upload it to ChatGPT or any AI chat\n` +
+          `\u2022 Share it with a teammate\n\n` +
+          `The file gives any AI full context about what you've been working on.`,
+      });
+    } else {
+      this.webviewView?.webview.postMessage({
+        type: 'message', role: 'assistant',
+        content: `Nothing to export yet \u2014 start chatting first!`,
+      });
+    }
+  }
+
+  private async handleForget(): Promise<void> {
+    this.contextManager.resetConversation();
+    this.webviewView?.webview.postMessage({ type: 'clearChat' });
+    this.webviewView?.webview.postMessage({
+      type: 'message', role: 'assistant',
+      content: `**Session cleared.** Starting fresh.\n\nYour saved snapshots are still intact \u2014 they'll be there when you checkout previous commits. This just clears the current conversation.`,
+    });
+    this.sendStatus();
+  }
+
+  // ══════════════════════════════════════════════════════
+  // Mega Context File Generator
+  // ══════════════════════════════════════════════════════
+
+  private async generateMegaContext(commitSha: string, commitMessage: string): Promise<string | null> {
+    const fs = require('fs');
+    const pathMod = require('path');
+
+    const messages = this.contextManager.getMessages();
+    const scratchpad = this.contextManager.getScratchpad();
+
+    if (messages.length === 0 && scratchpad.length === 0) { return null; }
+
+    const lines: string[] = [];
+
+    // Header
+    lines.push('# RewindAI Context Export');
+    lines.push(`> Generated by RewindAI \u2014 paste this into any AI chat to continue working`);
+    lines.push(`> Commit: \`${commitSha.slice(0, 7)}\` \u2014 ${commitMessage}`);
+    lines.push(`> Exported: ${new Date().toISOString()}`);
+    lines.push('');
+
+    // Instructions for the receiving AI
+    lines.push('## Instructions for AI');
+    lines.push('You are continuing a coding session. The context below contains the full history');
+    lines.push('of decisions made, files changed, and conversations had. Use this to:');
+    lines.push('1. Understand what has been done so far');
+    lines.push('2. Know what decisions were made and why');
+    lines.push('3. Continue working from exactly this point');
+    lines.push('4. Reference specific files and changes when asked');
+    lines.push('');
+
+    // Project info
+    lines.push('## Project');
+    try {
+      const readmePath = pathMod.join(this.workspaceRoot, 'README.md');
+      if (fs.existsSync(readmePath)) {
+        const readme = fs.readFileSync(readmePath, 'utf-8');
+        lines.push(readme.slice(0, 500));
+        if (readme.length > 500) { lines.push('... (truncated)'); }
+      }
+    } catch { /* skip */ }
+    lines.push('');
+
+    // File structure
+    lines.push('## Current File Structure');
+    try {
+      const { execSync } = require('child_process');
+      const tree = execSync(
+        'find . -type f -not -path "*/node_modules/*" -not -path "*/.git/*" -not -path "*/.rewind/*" -not -path "*/out/*" -not -path "*/__pycache__/*" | head -50',
+        { cwd: this.workspaceRoot, timeout: 5000 }
+      ).toString();
+      lines.push('```');
+      lines.push(tree.trim());
+      lines.push('```');
+    } catch { /* skip */ }
+    lines.push('');
+
+    // Decisions
+    const decisions = scratchpad.filter(n => n.includes('DECISION'));
+    if (decisions.length > 0) {
+      lines.push('## Decisions Made');
+      for (const d of decisions) {
+        lines.push(`- ${d.replace(/\[.*?\]\s*/, '')}`);
+      }
+      lines.push('');
+    }
+
+    // Files changed
+    const fileEdits = scratchpad.filter(n => n.includes('EDITED') || n.includes('RAN'));
+    if (fileEdits.length > 0) {
+      lines.push('## Actions Taken');
+      for (const e of fileEdits) {
+        lines.push(`- ${e.replace(/\[.*?\]\s*/, '')}`);
+      }
+      lines.push('');
+    }
+
+    // Conversation history (condensed)
+    if (messages.length > 0) {
+      lines.push('## Conversation History');
+      const relevantMessages = messages
+        .filter(m => !m.content.startsWith('[Tool:') && !m.content.startsWith('[Result:'))
+        .slice(-20);
+      for (const m of relevantMessages) {
+        const role = m.role === 'user' ? 'USER' : 'AI';
+        const content = m.content.slice(0, 500);
+        lines.push(`**${role}:** ${content}`);
+        if (m.content.length > 500) { lines.push('*(truncated)*'); }
+        lines.push('');
+      }
+    }
+
+    // Session notes (from .rewind/sessions/)
+    const noteGen = new SessionNoteGenerator(this.workspaceRoot);
+    const sessionFiles = noteGen.listSessionFiles();
+    if (sessionFiles.length > 0) {
+      lines.push('## Session Notes');
+      for (const file of sessionFiles.slice(-3)) {
+        const content = noteGen.readSessionFile(file);
+        if (content) {
+          const sections = content.split('## ');
+          for (const section of sections) {
+            if (section.startsWith('Decisions') || section.startsWith('Key File Changes') || section.startsWith('Key Insights')) {
+              lines.push('### ' + section.slice(0, 500));
+            }
+          }
+        }
+      }
+      lines.push('');
+    }
+
+    // Next steps
+    lines.push('## What To Do Next');
+    lines.push('Continue working from this point. The user may ask you to:');
+    lines.push('- Build on the existing code');
+    lines.push('- Fix issues from the previous session');
+    lines.push('- Take a different approach to something decided earlier');
+    lines.push('- Understand why something was done a certain way');
+    lines.push('');
+
+    // Write the file
+    const exportDir = pathMod.join(this.workspaceRoot, '.rewind', 'exports');
+    if (!fs.existsSync(exportDir)) { fs.mkdirSync(exportDir, { recursive: true }); }
+
+    const timestamp = new Date().toISOString().replace(/[:.]/g, '-').slice(0, 19);
+    const filename = `rewindai-context-${commitSha.slice(0, 7)}-${timestamp}.md`;
+    const filePath = pathMod.join(exportDir, filename);
+    fs.writeFileSync(filePath, lines.join('\n'), 'utf-8');
+
+    // Open it in the editor
+    try {
+      const doc = await vscode.workspace.openTextDocument(vscode.Uri.file(filePath));
+      await vscode.window.showTextDocument(doc, { preview: false, preserveFocus: true });
+    } catch { /* skip */ }
+
+    return filePath;
   }
 
   private sendStatus(): void {

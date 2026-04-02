@@ -33,12 +33,20 @@
         "isSticky": true,
         "commands": [
           {
-            "name": "history",
-            "description": "Show commits with saved AI context"
+            "name": "rewind",
+            "description": "Find and rewind to a previous commit — generates context you can use anywhere"
           },
           {
-            "name": "status",
-            "description": "Show current context status"
+            "name": "context",
+            "description": "Show what I currently know from this commit's history"
+          },
+          {
+            "name": "export",
+            "description": "Export current context as a file you can use in any AI chat"
+          },
+          {
+            "name": "forget",
+            "description": "Clear conversation and start fresh (snapshots are kept)"
           }
         ]
       }
