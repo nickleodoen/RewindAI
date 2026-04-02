@@ -260,6 +260,8 @@ export class ToolExecutor {
       }
     }
 
+    const isWindows = process.platform === 'win32';
+
     return new Promise<string>((resolve) => {
       exec(
         command,
@@ -268,6 +270,7 @@ export class ToolExecutor {
           timeout: 60_000,
           maxBuffer: 2 * 1024 * 1024,
           env: { ...process.env, FORCE_COLOR: '0' },
+          shell: isWindows ? 'powershell.exe' : '/bin/sh',
         },
         (error, stdout, stderr) => {
           let output = '';
