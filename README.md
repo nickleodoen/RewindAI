@@ -87,10 +87,11 @@ RewindAI isn't just a chat. It's a full coding agent with 7 tools:
 The agent decides which tools to use based on your request. You say "add input validation to the login form" — it reads the file, edits it, runs the tests.
 
 **You bring your own API key.** RewindAI supports:
-- **Anthropic Claude** (claude-sonnet-4-6, claude-opus-4-6)
-- **OpenAI GPT** (gpt-4o, gpt-4o-mini)
+- **Anthropic Claude** (Claude Sonnet 4.6, Claude Opus 4.6, Claude Haiku 4.5)
+- **OpenAI GPT** (GPT-4o, GPT-4o Mini, o1)
+- **Custom models** — enter any model ID
 
-No vendor lock-in. No RewindAI API. Your key, your model, your choice.
+The Settings tab has a **model dropdown** with popular models plus a custom option. Select a model and the provider auto-switches. No vendor lock-in. No RewindAI API. Your key, your model, your choice.
 
 ### Context That Travels With Git
 
@@ -244,12 +245,21 @@ Click the **REWINDAI** tab in the bottom panel (next to Terminal). Ask it anythi
 
 | Command | Description |
 |---------|-------------|
-| `/suggest <query>` | Find the right commit to checkout based on natural language |
-| `/why <file>` | Show the decision chain for a file (Neo4j powered) |
-| `/graph` | Knowledge graph stats and connection status |
-| `/sessions` | List all session notes |
-| `/status` | Current context and connection info |
-| `/whatchanged` | Overview of context across recent commits |
+| `/rewind <description>` | Find and rewind to a previous commit — generates a context file you can use in any AI chat |
+| `/context` | Show what the AI currently knows from this commit's history — decisions, actions, restored state |
+| `/export` | Export full context as a `.md` file you can paste into Claude Code, ChatGPT, or any AI |
+| `/forget` | Clear the current conversation and start fresh (saved snapshots are kept) |
+
+### Context Export (Mega Context File)
+
+When you use `/rewind` or `/export`, RewindAI generates a portable `.md` file containing:
+- Project overview and file structure
+- All decisions made and why
+- Actions taken (file edits, commands run)
+- Condensed conversation history
+- Session notes from `.rewind/sessions/`
+
+**Take this file to any AI.** Paste it into Claude Code, ChatGPT, Cursor, or any tool — the AI will have full context to continue your work.
 
 ## Project Structure
 

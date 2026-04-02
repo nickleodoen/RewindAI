@@ -64,11 +64,13 @@ rewindai/
     └── seed-demo.py     # Demo data seeder
 ```
 
-## Automatic Behavior (NO manual commands)
+## Automatic Behavior + User Commands
 - **On git commit**: GitWatcher fires → ContextManager.saveSnapshot() → writes .rewind/snapshots/{sha}.json + indexes in Neo4j
 - **On git checkout**: GitWatcher fires → ContextManager.loadSnapshotForCommit() → reads .rewind/snapshots/{sha}.json → injects into chat system prompt
-- **Only 2 slash commands**: `/history` (list snapshots) and `/status` (show current state)
-- **No /snapshot, /restore, /why, /decisions** — these are removed
+- **Production commands**: `/rewind <desc>` (find+restore commit + generate mega context), `/context` (show what AI knows), `/export` (portable .md for any AI), `/forget` (clear conversation, keep snapshots)
+- **Internal/debug commands** (hidden from UI, still work): `/sessions`, `/graph`, `/why`, `/suggest`, `/status`, `/whatchanged`
+- **Mega context export**: Generates a portable .md file the user can paste into Claude Code, ChatGPT, or any AI to continue working
+- **Session notes capture LLM reasoning**: When the LLM explains what it's about to do before tool calls, that reasoning is captured in session notes
 
 ## Coding Conventions
 
