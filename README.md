@@ -15,7 +15,17 @@
 
 *Built at [HackwithBay 2.0](https://luma.com/2n8vk5s3?tk=N8NtoT) by [Nikhil Yachareni](https://github.com/nickleodoen) & [Mihir Modi](https://github.com/wdwd720)*
 
+[![Watch the Demo](https://img.shields.io/badge/▶%20Watch%20Demo-YouTube-red?logo=youtube)](https://youtu.be/kCTigOCKV1s)
+
 ---
+
+</div>
+
+<div align="center">
+
+[![RewindAI Demo](https://img.youtube.com/vi/kCTigOCKV1s/maxresdefault.jpg)](https://youtu.be/kCTigOCKV1s)
+
+**[Watch the full demo on YouTube →](https://youtu.be/kCTigOCKV1s)**
 
 </div>
 
