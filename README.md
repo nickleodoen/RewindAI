@@ -23,7 +23,7 @@
 
 <div align="center">
 
-[![RewindAI Demo](https://img.youtube.com/vi/kCTigOCKV1s/maxresdefault.jpg)](https://youtu.be/kCTigOCKV1s)
+[![RewindAI Demo](https://img.youtube.com/vi/kCTigOCKV1s/hqdefault.jpg)](https://youtu.be/kCTigOCKV1s)
 
 **[Watch the full demo on YouTube →](https://youtu.be/kCTigOCKV1s)**
 
