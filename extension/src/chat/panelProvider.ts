@@ -741,16 +741,16 @@ export class RewindPanelProvider implements vscode.WebviewViewProvider {
   /* Header */
   .header {
     display: flex;
+    justify-content: space-between;
     align-items: center;
-    padding: 4px 10px;
-    background: var(--vscode-titleBar-activeBackground, var(--vscode-sideBar-background));
-    border-bottom: 1px solid var(--vscode-panel-border, var(--vscode-widget-border));
+    padding: 6px 12px;
+    border-bottom: 1px solid var(--vscode-panel-border, rgba(255,255,255,0.06));
     flex-shrink: 0;
     font-size: 11px;
     font-weight: 600;
     letter-spacing: 0.3px;
   }
-  .header .brand { color: var(--vscode-textLink-foreground, #3794ff); }
+  .header .brand { font-size: 13px; font-weight: 700; }
   .header .version { opacity: 0.4; font-weight: normal; font-size: 10px; margin-left: 6px; }
   .header .spacer { flex: 1; }
   .header .gear-btn {
@@ -858,68 +858,84 @@ export class RewindPanelProvider implements vscode.WebviewViewProvider {
   }
 
   /* Messages */
-  .messages { flex: 1; overflow-y: auto; padding: 8px; min-height: 0; }
+  .messages { flex: 1; overflow-y: auto; padding: 8px 12px; min-height: 0; }
   .msg {
-    margin-bottom: 8px; padding: 6px 8px; border-radius: 4px;
-    max-width: 95%; line-height: 1.4; white-space: pre-wrap;
-    word-wrap: break-word; overflow-wrap: anywhere; font-size: 12px;
+    margin: 8px 0; padding: 10px 14px; border-radius: 8px;
+    max-width: 100%; line-height: 1.5; white-space: pre-wrap;
+    word-wrap: break-word; overflow-wrap: break-word; font-size: 13px;
+    position: relative;
   }
   .msg.user {
-    background: var(--vscode-input-background); margin-left: auto;
-    border: 1px solid var(--vscode-input-border, transparent);
+    background: var(--vscode-input-background);
+    border: 1px solid var(--vscode-input-border, rgba(255,255,255,0.06));
+    margin-left: 24px;
   }
   .msg.assistant {
-    background: var(--vscode-textBlockQuote-background, rgba(255,255,255,0.04));
+    background: transparent;
+    padding-left: 12px;
     border-left: 2px solid var(--vscode-focusBorder, #007acc);
   }
-  .msg.error { border-left-color: var(--vscode-errorForeground, #f44); opacity: 0.8; }
-  .msg .role { font-size: 9px; opacity: 0.5; margin-bottom: 2px; text-transform: uppercase; letter-spacing: 0.5px; }
+  .msg.error {
+    border-left-color: var(--vscode-errorForeground, #f44);
+    opacity: 0.85;
+  }
+  .msg .role {
+    font-size: 10px; font-weight: 600; opacity: 0.5; margin-bottom: 4px;
+    text-transform: uppercase; letter-spacing: 0.8px;
+  }
 
-  /* Tool blocks */
+  /* Tool blocks — compact, inline */
   .tool-block {
-    margin: 4px 0; padding: 6px 10px; border-radius: 4px;
+    margin: 4px 12px; padding: 4px 10px; border-radius: 4px;
     font-size: 11px; font-family: var(--vscode-editor-font-family, monospace);
-    line-height: 1.4; overflow-x: auto; word-break: break-all;
+    line-height: 1.4; overflow-x: auto;
   }
   .tool-block.call {
-    background: rgba(55, 148, 255, 0.1);
-    border-left: 3px solid var(--vscode-textLink-foreground, #3794ff);
+    background: rgba(55, 148, 255, 0.06);
+    border-left: 2px solid rgba(55, 148, 255, 0.4);
+    color: var(--vscode-foreground); opacity: 0.7;
   }
   .tool-block.call .tool-label {
     color: var(--vscode-textLink-foreground, #3794ff);
-    font-weight: 600; font-size: 10px; text-transform: uppercase; letter-spacing: 0.3px;
+    font-weight: 600; font-size: 10px;
   }
   .tool-block.result {
-    background: rgba(78, 201, 176, 0.06);
-    border-left: 3px solid var(--vscode-charts-green, #4ec9b0);
-    white-space: pre-wrap; max-height: 200px; overflow-y: auto;
+    background: rgba(78, 201, 176, 0.04);
+    border-left: 2px solid rgba(78, 201, 176, 0.3);
+    white-space: pre-wrap; max-height: 120px; overflow-y: auto;
+    opacity: 0.6; font-size: 10px;
   }
   .tool-block.result.error {
-    background: rgba(244, 68, 68, 0.06);
-    border-left-color: var(--vscode-errorForeground, #f44);
+    background: rgba(244, 68, 68, 0.05);
+    border-left-color: rgba(244, 68, 68, 0.4); opacity: 0.8;
   }
 
-  .typing { padding: 6px 8px; font-style: italic; opacity: 0.5; font-size: 11px; display: none; }
+  .typing { padding: 6px 12px; font-style: italic; opacity: 0.5; font-size: 11px; display: none; }
   .typing.show { display: block; }
 
   /* Input */
   .input-area {
-    display: flex; padding: 6px 8px; gap: 6px;
-    border-top: 1px solid var(--vscode-panel-border, var(--vscode-widget-border)); flex-shrink: 0;
+    display: flex; padding: 8px 12px; gap: 8px;
+    border-top: 1px solid var(--vscode-panel-border, rgba(255,255,255,0.06));
+    flex-shrink: 0; align-items: flex-end;
+    background: var(--vscode-input-background);
   }
   .input-area textarea {
-    flex: 1; background: var(--vscode-input-background); color: var(--vscode-input-foreground);
-    border: 1px solid var(--vscode-input-border, transparent); border-radius: 4px;
-    padding: 5px 8px; font-family: inherit; font-size: 12px; resize: none;
-    min-height: 28px; max-height: 100px; outline: none; min-width: 0;
+    flex: 1; background: transparent; color: var(--vscode-input-foreground);
+    border: none; padding: 6px 4px; font-family: inherit; font-size: 13px;
+    resize: none; min-height: 20px; max-height: 120px; outline: none;
+    line-height: 1.4; min-width: 0;
   }
-  .input-area textarea:focus { border-color: var(--vscode-focusBorder, #007acc); }
+  .input-area textarea::placeholder {
+    color: var(--vscode-input-placeholderForeground, rgba(255,255,255,0.3));
+  }
   .input-area button {
     background: var(--vscode-button-background); color: var(--vscode-button-foreground);
-    border: none; border-radius: 4px; padding: 5px 10px; cursor: pointer;
-    font-size: 11px; align-self: flex-end; white-space: nowrap; flex-shrink: 0;
+    border: none; border-radius: 4px; padding: 4px 12px; cursor: pointer;
+    font-size: 12px; flex-shrink: 0; height: 28px;
   }
   .input-area button:hover { background: var(--vscode-button-hoverBackground); }
+  .input-area button:disabled { opacity: 0.4; cursor: default; }
 
   /* History */
   .history-list { flex: 1; overflow-y: auto; padding: 8px; min-height: 0; }
@@ -974,11 +990,13 @@ export class RewindPanelProvider implements vscode.WebviewViewProvider {
   <div class="messages" id="messages">
     <div class="msg assistant">
       <div class="role">RewindAI</div>
-<strong>AI coding assistant with version-controlled memory.</strong>
+<strong>Version-controlled AI memory.</strong>
 
-I can read, edit, and create files, run terminal commands, and search your codebase.
+I can read, edit, and create files, run commands, and search your codebase.
 
-When you commit, I save our context. When you checkout a different commit, I remember what we discussed there.</div>
+My context auto-saves when you commit and auto-restores when you checkout.
+
+Type <code>/rewind</code> to find a previous commit. Type <code>/export</code> to save context for any AI chat.</div>
   </div>
   <div class="typing" id="typing">Thinking...</div>
   <div class="input-area">
@@ -1018,9 +1036,22 @@ When you commit, I save our context. When you checkout a different commit, I rem
     </div>
 
     <div class="field">
-      <label for="cfgModel">Model (optional)</label>
-      <input type="text" id="cfgModel" placeholder="claude-sonnet-4-6" />
-      <div class="field-hint">Leave blank for default. Examples: claude-sonnet-4-6, claude-opus-4-6, gpt-4o</div>
+      <label for="cfgModel">Model</label>
+      <select id="cfgModel">
+        <optgroup label="Anthropic">
+          <option value="claude-sonnet-4-6">Claude Sonnet 4.6 (recommended)</option>
+          <option value="claude-opus-4-6">Claude Opus 4.6 (most capable)</option>
+          <option value="claude-haiku-4-5">Claude Haiku 4.5 (fastest)</option>
+        </optgroup>
+        <optgroup label="OpenAI">
+          <option value="gpt-4o">GPT-4o</option>
+          <option value="gpt-4o-mini">GPT-4o Mini (fastest)</option>
+          <option value="o1">o1 (reasoning)</option>
+        </optgroup>
+        <option value="custom">Custom model...</option>
+      </select>
+      <input type="text" id="cfgCustomModel" placeholder="Enter custom model ID" style="display:none; margin-top:6px;" />
+      <div class="field-hint">Select a model or choose "Custom" to enter a model ID</div>
     </div>
 
     <button class="btn-primary" id="saveConfigBtn">Save & Start Coding</button>
@@ -1056,6 +1087,7 @@ When you commit, I save our context. When you checkout a different commit, I rem
   const cfgProvider = document.getElementById('cfgProvider');
   const cfgApiKey = document.getElementById('cfgApiKey');
   const cfgModel = document.getElementById('cfgModel');
+  const cfgCustomModel = document.getElementById('cfgCustomModel');
   const saveConfigBtn = document.getElementById('saveConfigBtn');
   const toggleKeyVis = document.getElementById('toggleKeyVis');
   const keyHint = document.getElementById('keyHint');
@@ -1092,7 +1124,23 @@ When you commit, I save our context. When you checkout a different commit, I rem
       ? 'Get a key from console.anthropic.com'
       : 'Get a key from platform.openai.com';
     cfgApiKey.placeholder = p === 'anthropic' ? 'sk-ant-api03-...' : 'sk-...';
-    cfgModel.placeholder = p === 'anthropic' ? 'claude-sonnet-4-6' : 'gpt-4o';
+  });
+
+  // ── Model dropdown: custom option + auto-switch provider ──
+  cfgModel.addEventListener('change', () => {
+    if (cfgModel.value === 'custom') {
+      cfgCustomModel.style.display = 'block';
+      cfgCustomModel.focus();
+    } else {
+      cfgCustomModel.style.display = 'none';
+    }
+    // Auto-switch provider based on model
+    if (cfgModel.value.startsWith('claude') || cfgModel.value.startsWith('claude')) {
+      cfgProvider.value = 'anthropic';
+    } else if (cfgModel.value.startsWith('gpt') || cfgModel.value.startsWith('o1')) {
+      cfgProvider.value = 'openai';
+    }
+    cfgProvider.dispatchEvent(new Event('change'));
   });
 
   // ── Toggle key visibility ──
@@ -1113,11 +1161,12 @@ When you commit, I save our context. When you checkout a different commit, I rem
     cfgApiKey.style.borderColor = '';
     saveConfigBtn.disabled = true;
     saveConfigBtn.textContent = 'Saving...';
+    const model = cfgModel.value === 'custom' ? cfgCustomModel.value.trim() : cfgModel.value;
     vscode.postMessage({
       type: 'saveConfig',
       provider: cfgProvider.value,
       apiKey: key,
-      model: cfgModel.value.trim(),
+      model: model,
     });
   });
 
@@ -1207,7 +1256,18 @@ When you commit, I save our context. When you checkout a different commit, I rem
         }
         // Update settings form
         cfgProvider.value = msg.provider || 'anthropic';
-        if (msg.model) cfgModel.value = msg.model;
+        if (msg.model) {
+          // Check if it's a known model in the dropdown
+          const options = Array.from(cfgModel.options).map(o => o.value);
+          if (options.includes(msg.model)) {
+            cfgModel.value = msg.model;
+            cfgCustomModel.style.display = 'none';
+          } else {
+            cfgModel.value = 'custom';
+            cfgCustomModel.value = msg.model;
+            cfgCustomModel.style.display = 'block';
+          }
+        }
         // Update current config display
         if (msg.hasApiKey) {
           currentConfig.style.display = 'block';
